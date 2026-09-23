@@ -17,6 +17,7 @@ export type MarkdownTransform = (markdown: string, availableWidth: number) => st
 
 const BLOCK_CACHE_LIMIT = 4000;
 const blockCache = new Map<string, string[]>();
+const byToken = new WeakMap<object, { context: string; lines: string[] }>();
 
 export const cacheStats = { hits: 0, misses: 0 };
 
@@ -66,9 +67,18 @@ export function renderMarkdown(markdown: string, width: number, options: Omit<Ri
 		// blocks render exactly as in the final message (and share its cache entries),
 		// unless math is deferred until message_end.
 		const phase = !streaming ? "f" : i === lastIndex ? "s" : state.math === "final" ? "m" : "f";
-		const block = cached(`${base}${phase}\0${token.type}\0${token.raw}`, () =>
-			renderBlock(token, { ...ctx, streaming: phase !== "f" }),
-		);
+		const context = base + phase;
+		// Fast path: incremental lexing hands back the same token objects for the
+		// stable prefix, so identity lookups avoid hashing long block sources.
+		const known = byToken.get(token);
+		let block: string[];
+		if (known && known.context === context) {
+			cacheStats.hits++;
+			block = known.lines;
+		} else {
+			block = cached(`${context}\0${token.type}\0${token.raw}`, () => renderBlock(token, { ...ctx, streaming: phase !== "f" }));
+			byToken.set(token, { context, lines: block });
+		}
 		if (block.length === 0) return;
 		if (lines.length > 0) lines.push("");
 		lines.push(...block);

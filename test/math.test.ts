@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setCapabilities, setCellDimensions, visibleWidth } from "@earendil-works/pi-tui";
 import { createMathRenderer } from "../src/math/formula.ts";
-import { placeholderRows, setKittyWriter, transmitSequence } from "../src/math/kitty.ts";
+import { deleteImages, installFrameHook, placeholderRows, prepareFrame, registerImage, setKittyWriter, transmitSequence } from "../src/math/kitty.ts";
 import { loadMathJaxSync, MathError, rasterize } from "../src/math/mathjax.ts";
 import { renderMarkdown } from "../src/render/rich-markdown.ts";
 import { containsRenderArtifacts, sanitizeMessages, stripRenderArtifacts } from "../src/sanitize.ts";
@@ -52,7 +52,8 @@ test("placeholders are one column per cell and transmit once", () => {
 	assert.ok(rows[0]!.startsWith("\x1b[38;2;18;52;86m"));
 	const seq = transmitSequence("A".repeat(9000), 5, 3, 1);
 	assert.equal(seq.match(/\x1b_G/g)!.length, 3);
-	assert.ok(seq.startsWith("\x1b_Ga=T,f=100,q=2,U=1,i=5,p=5,c=3,r=1,m=1;"));
+	assert.ok(seq.startsWith("\x1b_Ga=T,f=100,q=2,U=1,i=5,c=3,r=1,m=1;"));
+	assert.ok(!rows.join("").includes("\x1b[58"), "no SGR 58: pi-tui mis-parses it into bogus attributes");
 });
 
 test("end to end: formulas become placeholders, transmitted once, width respected", () => {
@@ -100,4 +101,40 @@ test("sanitizer strips image artifacts and leaves clean text alone", () => {
 	assert.equal(result.messages[1], dirty[1], "tool results are untouched");
 	assert.notEqual(result.messages[0], dirty[0], "input messages are not mutated");
 	assert.ok(containsRenderArtifacts((dirty[0]!.content as any)[0].text));
+});
+
+test("frame hook: images travel with frames and are re-sent after a full clear", () => {
+	deleteImages(undefined);
+	const written: string[] = [];
+	const terminal = { write: (d: string) => void written.push(d) };
+	const uninstall = installFrameHook(terminal);
+	const line = `a ${placeholderRows(0x112233, 3, 1)[0]} b`;
+	registerImage(0x112233, "QUJD", 3, 1);
+	assert.equal(written.length, 0, "no direct write while hooked");
+
+	terminal.write(`\x1b[?2026h${line}\x1b[?2026l`);
+	assert.equal(written[0]!.split("\x1b_Ga=T").length - 1, 1);
+	assert.ok(written[0]!.indexOf("\x1b_Ga=T") < written[0]!.indexOf("\u{10EEEE}"), "image precedes its placeholders");
+
+	terminal.write(`\r\n${line}`);
+	assert.ok(!written[1]!.includes("\x1b_Ga=T"), "already sent");
+
+	// pi's resize path: clear screen + scrollback, then redraw everything.
+	terminal.write(`\x1b[2J\x1b[H\x1b[3J${line}`);
+	const frame = written[2]!;
+	assert.ok(frame.indexOf("\x1b[3J") < frame.indexOf("\x1b_Ga=T"), "re-sent after the clear");
+
+	// A styled prefix (heading color) right before the image must not be taken for its id.
+	deleteImages(undefined);
+	registerImage(0x112233, "QUJD", 3, 1);
+	const styled = prepareFrame(`\x1b[38;2;240;198;116m\x1b[1m${placeholderRows(0x112233, 3, 1)[0]}`);
+	assert.ok(styled.transmissions.includes("i=1122867,"), "sends the image, not the heading color");
+
+	// Color sequence split across two writes.
+	terminal.write("\x1b[2J" + line.slice(0, 8));
+	terminal.write(line.slice(8));
+	assert.ok(written.slice(3).join("").includes("\x1b_Ga=T"));
+	uninstall();
+	deleteImages(undefined);
+	assert.deepEqual(prepareFrame(line), { insertAt: 0, transmissions: "" }, "forgotten after deleteImages");
 });

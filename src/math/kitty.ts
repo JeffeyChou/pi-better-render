@@ -1,15 +1,23 @@
 /**
  * Kitty graphics protocol with Unicode placeholders (supported by Ghostty and kitty).
  *
- * The image is transmitted once as a *virtual* placement (U=1). Text lines then
- * contain U+10EEEE cells whose foreground color encodes the image id and whose
- * combining diacritics encode row/column. To pi-tui these are ordinary 1-column
- * characters, so they wrap, scroll and diff like text and never need cursor
- * tricks; pi-tui's own Kitty image bookkeeping never sees (or deletes) them.
+ * The image is transmitted as a *virtual* placement (U=1). Text lines then
+ * contain U+10EEEE cells whose truecolor foreground encodes the image id and
+ * whose combining diacritics encode row/column. To pi-tui these are ordinary
+ * 1-column characters, so they wrap, scroll and diff like text; pi-tui's own
+ * Kitty bookkeeping never sees (or deletes) them.
  *
- * Transmission is written straight to stdout while a frame is being rendered,
- * i.e. before pi-tui writes that frame, so the terminal knows the image before
- * the placeholders arrive.
+ * Only the foreground color is used (no SGR 58 underline color for placement
+ * ids): pi-tui's ANSI tracker does not understand SGR 58 and would carry its
+ * R;G;B bytes into the next wrapped line as bogus attributes (e.g. 41 = red
+ * background).
+ *
+ * Transmission is frame-driven: `installFrameHook` wraps pi's terminal writer,
+ * scans every outgoing frame for placeholder ids and sends each image the
+ * terminal does not have yet right before the frame data. A full clear
+ * (ED 2/3, RIS), as pi does on resize, makes the terminal drop images, so it
+ * resets the "sent" set and the images are re-sent with the redrawn lines.
+ * Without a hook (preview script, tests) images are sent when registered.
  *
  * Diacritic table: kitty's rowcolumn-diacritics.txt (via Fadouse/pi-math, MIT).
  */
@@ -67,22 +75,31 @@ function rgb(id: number): string {
 	return `${(id >> 16) & 0xff};${(id >> 8) & 0xff};${id & 0xff}`;
 }
 
+export function placeholderOpen(id: number): string {
+	return `\x1b[38;2;${rgb(id)}m`;
+}
+
+export const PLACEHOLDER_CLOSE = "\x1b[39m";
+
+/** One placeholder cell (row r, column c of the image). */
+export function placeholderCell(row: number, column: number): string {
+	return PLACEHOLDER + DIACRITICS[row] + DIACRITICS[column];
+}
+
 /** Placeholder text for an image: one string per terminal row, `columns` cells each. */
 export function placeholderRows(id: number, columns: number, rows: number): string[] {
-	const open = `\x1b[38;2;${rgb(id)}m\x1b[58;2;${rgb(id)}m`;
-	const close = "\x1b[39;59m";
 	const out: string[] = [];
 	for (let r = 0; r < rows; r++) {
-		let cells = open;
-		for (let c = 0; c < columns; c++) cells += PLACEHOLDER + DIACRITICS[r] + DIACRITICS[c];
-		out.push(cells + close);
+		let cells = placeholderOpen(id);
+		for (let c = 0; c < columns; c++) cells += placeholderCell(r, c);
+		out.push(cells + PLACEHOLDER_CLOSE);
 	}
 	return out;
 }
 
 /** APC sequence(s) transmitting a PNG and creating a virtual placement of columns×rows cells. */
 export function transmitSequence(base64Png: string, id: number, columns: number, rows: number): string {
-	const params = `a=T,f=100,q=2,U=1,i=${id},p=${id},c=${columns},r=${rows}`;
+	const params = `a=T,f=100,q=2,U=1,i=${id},c=${columns},r=${rows}`;
 	if (base64Png.length <= CHUNK) return `\x1b_G${params};${base64Png}\x1b\\`;
 	let out = "";
 	for (let offset = 0; offset < base64Png.length; offset += CHUNK) {
@@ -97,32 +114,110 @@ export function deleteSequence(id: number): string {
 	return `\x1b_Ga=d,d=I,i=${id},q=2\x1b\\`;
 }
 
+interface ImageData {
+	base64: string;
+	columns: number;
+	rows: number;
+}
+
 type Writer = (data: string) => void;
 
-let writer: Writer | undefined = (data) => {
+let directWriter: Writer | undefined = (data) => {
 	if (process.stdout.isTTY) process.stdout.write(data);
 };
 
-/** Tests replace the writer to capture output (or pass undefined to drop it). */
+/** Tests replace the writer used when no frame hook is installed (undefined drops output). */
 export function setKittyWriter(fn: Writer | undefined): void {
-	writer = fn;
+	directWriter = fn;
 }
 
-const transmitted = new Set<number>();
+const REGISTRY_LIMIT = 4000;
+const registry = new Map<number, ImageData>();
+const sent = new Set<number>();
+let hooked = false;
 
-export function ensureTransmitted(id: number, base64Png: string, columns: number, rows: number): void {
-	if (transmitted.has(id)) return;
-	transmitted.add(id);
-	writer?.(transmitSequence(base64Png, id, columns, rows));
+/** Make an image known. Without a frame hook it is sent immediately. */
+export function registerImage(id: number, base64: string, columns: number, rows: number): void {
+	if (!registry.has(id)) {
+		registry.set(id, { base64, columns, rows });
+		if (registry.size > REGISTRY_LIMIT) {
+			const oldest = registry.keys().next().value;
+			if (oldest !== undefined) registry.delete(oldest);
+		}
+	}
+	if (!hooked && !sent.has(id)) {
+		sent.add(id);
+		directWriter?.(transmitSequence(base64, id, columns, rows));
+	}
 }
 
-/** Free every image this process transmitted (terminal side). */
-export function deleteTransmitted(): void {
-	if (transmitted.size === 0) return;
+/** The truecolor foreground closest to a placeholder cell (other SGRs, e.g. bold, may sit in between). */
+const ID_IN_FRAME = /\x1b\[38;2;(\d{1,3});(\d{1,3});(\d{1,3})m(?:\x1b\[(?!38;)[\d;]*m)*\u{10EEEE}/gu;
+const CLEAR = /\x1b\[[23]J|\x1bc/g;
+
+/**
+ * Transmissions a frame chunk needs, and where to insert them (after the last
+ * full clear in the chunk, else at the start). Exported for tests.
+ */
+export function prepareFrame(chunk: string, carry = ""): { insertAt: number; transmissions: string } {
+	let insertAt = 0;
+	CLEAR.lastIndex = 0;
+	for (let m = CLEAR.exec(chunk); m; m = CLEAR.exec(chunk)) insertAt = m.index + m[0].length;
+	if (insertAt > 0) sent.clear();
+
+	let transmissions = "";
+	if (registry.size === 0) return { insertAt, transmissions };
+	const text = carry + chunk;
+	ID_IN_FRAME.lastIndex = 0;
+	for (let m = ID_IN_FRAME.exec(text); m; m = ID_IN_FRAME.exec(text)) {
+		const id = (Number(m[1]) << 16) | (Number(m[2]) << 8) | Number(m[3]);
+		if (sent.has(id)) continue;
+		const image = registry.get(id);
+		if (!image) continue;
+		sent.add(id);
+		transmissions += transmitSequence(image.base64, id, image.columns, image.rows);
+	}
+	return { insertAt, transmissions };
+}
+
+interface WritableTerminal {
+	write(data: string): void;
+}
+
+/** Wrap pi's terminal writer so images travel with the frames that show them. Returns an uninstaller. */
+export function installFrameHook(terminal: WritableTerminal): () => void {
+	const original = terminal.write;
+	let carry = "";
+	const hook = function (this: unknown, data: string) {
+		let out = data;
+		if (typeof data === "string" && data.length > 0) {
+			try {
+				const { insertAt, transmissions } = prepareFrame(data, carry);
+				if (transmissions) out = data.slice(0, insertAt) + transmissions + data.slice(insertAt);
+				// A placeholder's color sequence may straddle two writes.
+				carry = data.slice(-40);
+			} catch {
+				out = data;
+			}
+		}
+		return original.call(this ?? terminal, out);
+	};
+	terminal.write = hook;
+	hooked = true;
+	sent.clear(); // unknown terminal state: resend on first sight
+	return () => {
+		if (terminal.write === hook) terminal.write = original;
+		hooked = false;
+	};
+}
+
+/** Free every image this process sent (terminal side) and forget them. */
+export function deleteImages(write: Writer | undefined = directWriter): void {
 	let out = "";
-	for (const id of transmitted) out += deleteSequence(id);
-	transmitted.clear();
-	writer?.(out);
+	for (const id of sent) out += deleteSequence(id);
+	sent.clear();
+	registry.clear();
+	if (out) write?.(out);
 }
 
 let nextId = 0x100000 + Math.floor(Math.random() * 0x600000);

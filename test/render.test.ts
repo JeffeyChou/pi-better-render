@@ -6,6 +6,8 @@ import { noMath } from "../src/render/context.ts";
 import { lex } from "../src/render/lexer.ts";
 import { cacheStats, clearBlockCache, renderMarkdown } from "../src/render/rich-markdown.ts";
 import { fitColumns } from "../src/render/table.ts";
+import { wrap } from "../src/render/util.ts";
+import { placeholderRows } from "../src/math/kitty.ts";
 import { createStyle, plainStyle } from "../src/style.ts";
 import { darkTheme } from "./theme.ts";
 
@@ -150,4 +152,53 @@ test("streaming: appending text only re-renders the tail block", () => {
 test("streaming render matches the final render for complete blocks", () => {
 	const text = "# T\n\n- a\n- b\n\n| x | y |\n|---|---|\n| 1 | 2 |\n\ntail";
 	assert.deepEqual(render(text, 60, true), render(text, 60, false));
+});
+
+test("wrapping around inline images leaks no attributes into the next line", () => {
+	const image = placeholderRows(0x10292a, 6, 1)[0]!; // id bytes 16;41;42 — 41 is "red background"
+	const lines = wrap(`scale values from ${image}. Then more words here`, 26);
+	assert.equal(lines.length, 2);
+	assert.equal(lines[1], "Then more words here");
+	assert.ok(lines[0]!.includes(image));
+});
+
+test("an image split by wrapping keeps its columns on both lines", () => {
+	const image = placeholderRows(0x100001, 30, 1)[0]!;
+	const lines = wrap(`x ${image}`, 20);
+	const cells = lines.join("").match(/\u{10EEEE}\p{M}*/gu)!;
+	assert.equal(cells.length, 30);
+	assert.equal(cells.join(""), image.match(/\u{10EEEE}\p{M}*/gu)!.join(""), "column order preserved");
+	for (const line of lines) {
+		assert.ok(visibleWidth(line) <= 20);
+		if (line.includes("\u{10EEEE}")) assert.ok(line.includes("\x1b[38;2;16;0;1m"), "each piece carries the image id");
+	}
+});
+
+test("incremental lexing matches a full lex at every streaming step", async () => {
+	const { lexStats, clearLexCache } = await import("../src/render/lexer.ts");
+	const docs = [
+		fixture,
+		"para one\n\npara two\n| a | b |\n|---|---|\n| 1 | 2 |\n\nSetext\n===\n\n- a\n\n  continued\n- b\n\n> q\ncontinued\n\n```js\nlet x = 1\n```\n\n$$\nx^2\n$$\n\n    indented\n\n    more\n\n[ref]: http://x\n\nend [ref]",
+	];
+	const strip = (tokens: any[]) => JSON.parse(JSON.stringify(tokens));
+	for (const doc of docs) {
+		clearLexCache();
+		const before = lexStats.incremental;
+		for (let i = 1; i <= doc.length; i += 5) {
+			const partial = doc.slice(0, i);
+			const incremental = strip(lex(partial, true)); // extends the previous step
+			clearLexCache();
+			const full = strip(lex(partial, true));
+			assert.deepEqual(incremental, full, `diverged at ${i}: ${JSON.stringify(partial.slice(-40))}`);
+			clearBlockCache();
+			const a = render(partial, 70, true);
+			clearBlockCache();
+			assert.deepEqual(a, render(partial, 70, true));
+		}
+		assert.ok(lexStats.incremental > before, "incremental path was exercised");
+		// Final (non-streaming) render reuses the streaming prefix and must equal a fresh lex.
+		const final = strip(lex(doc, false));
+		clearLexCache();
+		assert.deepEqual(final, strip(lex(doc, false)));
+	}
 });

@@ -11,17 +11,19 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { type ExtensionAPI, type ExtensionContext, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { createMathRenderer, imagesAvailable, mathStats, clearFormulaCache } from "./math/formula.ts";
-import { deleteTransmitted } from "./math/kitty.ts";
+import { deleteImages, installFrameHook } from "./math/kitty.ts";
 import { loadMathJax, mathjaxError, mathjaxReady } from "./math/mathjax.ts";
 import { detectTexBackend } from "./math/tex-backend.ts";
 import { applyPatch, removePatch } from "./patch.ts";
+import { clearLexCache } from "./render/lexer.ts";
 import { cacheStats, clearBlockCache, RichMarkdown } from "./render/rich-markdown.ts";
 import { containsRenderArtifacts, sanitizeMessages } from "./sanitize.ts";
 import { bumpVersion, type MathMode, setRenderRequester, state } from "./state.ts";
 import { createStyle, plainStyle, type Style } from "./style.ts";
 
 let ui: ExtensionContext["ui"] | undefined;
-let tui: { requestRender?: () => void; invalidate?: () => void } | undefined;
+let tui: { requestRender?: () => void; invalidate?: () => void; terminal?: { write(data: string): void } } | undefined;
+let uninstallFrameHook: (() => void) | undefined;
 
 function currentStyle(): Style {
 	const theme = ui?.theme;
@@ -63,6 +65,17 @@ function captureTui(ctx: ExtensionContext): void {
 		tui = undefined;
 	}
 	setRenderRequester(() => tui?.requestRender?.());
+	// Send formula images along with the frames that display them (and again after a full clear).
+	uninstallFrameHook?.();
+	uninstallFrameHook = tui?.terminal && typeof tui.terminal.write === "function" ? installFrameHook(tui.terminal) : undefined;
+}
+
+/** Forget everything rendered: the next frames re-rasterize and re-send what is visible. */
+function dropCaches(): void {
+	clearBlockCache();
+	clearLexCache();
+	clearFormulaCache();
+	deleteImages();
 }
 
 function debugLog(line: string): void {
@@ -117,7 +130,9 @@ export default function piStreamingPreview(pi: ExtensionAPI): void {
 
 	pi.on("session_shutdown", () => {
 		removePatch();
-		deleteTransmitted();
+		uninstallFrameHook?.();
+		uninstallFrameHook = undefined;
+		dropCaches();
 		setRenderRequester(undefined);
 		tui = undefined;
 		ui = undefined;
@@ -156,9 +171,7 @@ export default function piStreamingPreview(pi: ExtensionAPI): void {
 			} else if (arg === "lines") {
 				state.lineNumbers = !state.lineNumbers;
 			} else if (arg === "clear-cache") {
-				clearBlockCache();
-				clearFormulaCache();
-				deleteTransmitted();
+				dropCaches();
 			} else {
 				ctx.ui.notify(`Unknown argument "${arg}". Try: ${COMMANDS.map((c) => c.value).join(", ")}`, "error");
 				return;

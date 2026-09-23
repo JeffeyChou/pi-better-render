@@ -11,9 +11,9 @@
 
 const KITTY_APC = /\x1b_G[^\x1b]*(?:\x1b\\)?/g;
 const ITERM_OSC = /\x1b\]1337;File=[^\x07\x1b]*(?:\x07|\x1b\\)?/g;
+/** A whole placeholder run: id color, cells, color reset. */
+const PLACEHOLDER_RUN = /\x1b\[38;2;\d{1,3};\d{1,3};\d{1,3}m(?:\u{10EEEE}\p{M}*)+\x1b\[39m/gu;
 const PLACEHOLDER_CELL = /\u{10EEEE}\p{M}*/gu;
-/** The truecolor fg/underline pair that opens a placeholder run, and its reset. */
-const PLACEHOLDER_SGR = /\x1b\[(?:38|58);2;\d{1,3};\d{1,3};\d{1,3}m(?=[\x1b\u{10EEEE}])|\x1b\[39;59m/gu;
 
 const QUICK_CHECK = /\x1b_G|\x1b\]1337;|\u{10EEEE}/u;
 
@@ -23,7 +23,7 @@ export function containsRenderArtifacts(text: string): boolean {
 
 export function stripRenderArtifacts(text: string): string {
 	if (!containsRenderArtifacts(text)) return text;
-	return text.replace(KITTY_APC, "").replace(ITERM_OSC, "").replace(PLACEHOLDER_CELL, "").replace(PLACEHOLDER_SGR, "");
+	return text.replace(KITTY_APC, "").replace(ITERM_OSC, "").replace(PLACEHOLDER_RUN, "").replace(PLACEHOLDER_CELL, "");
 }
 
 interface Part {

@@ -9,7 +9,7 @@
 import { getCapabilities, getCellDimensions, getPngDimensions } from "@earendil-works/pi-tui";
 import type { MathRenderer } from "../render/context.ts";
 import { bumpVersion, requestRender, state } from "../state.ts";
-import { allocateId, ensureTransmitted, MAX_PLACEHOLDER_CELLS, placeholderRows, placeholderTerminal } from "./kitty.ts";
+import { allocateId, MAX_PLACEHOLDER_CELLS, registerImage, placeholderRows, placeholderTerminal } from "./kitty.ts";
 import { centeredCanvas, MathError, mathjaxReady, type Raster, rasterize, rasterizeSvg } from "./mathjax.ts";
 import { detectTexBackend } from "./tex-backend.ts";
 
@@ -152,7 +152,7 @@ export function createMathRenderer(getColor: () => string): MathRenderer {
 			mathStats.totalMs += performance.now() - started;
 		}
 		if (entry instanceof MathError) return undefined;
-		ensureTransmitted(entry.id, entry.base64, entry.columns, entry.rows);
+		registerImage(entry.id, entry.base64, entry.columns, entry.rows);
 		return entry;
 	};
 

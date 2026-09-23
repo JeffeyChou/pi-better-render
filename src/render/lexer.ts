@@ -87,10 +87,96 @@ function createMarked(streaming: boolean): Marked {
 
 const lexers = { streaming: createMarked(true), final: createMarked(false) };
 
+function fullLex(markdown: string, streaming: boolean): Token[] {
+	return (streaming ? lexers.streaming : lexers.final).lexer(markdown);
+}
+
+/**
+ * Incremental lexing for streaming.
+ *
+ * Each delta extends the previous text, and blocks that are followed by at
+ * least two other blocks can no longer change: markdown only ever re-shapes
+ * the last block(s) (a paragraph turning into a table header or setext
+ * heading, a list absorbing a continuation, an unclosed fence). So the tokens
+ * before the last two blocks are reused and only the tail is lexed again,
+ * which keeps the per-delta cost flat instead of growing with the message.
+ *
+ * Falls back to a full lex when the text is not an extension of a recent one,
+ * when token raws do not add up to the source, or when the text contains
+ * link reference definitions (they resolve links anywhere in the document).
+ */
+interface LexEntry {
+	src: string;
+	tokens: Token[];
+	/** Offsets where each top-level token starts (tokens.length + 1 entries). */
+	offsets: number[];
+}
+
+const RECENT_LIMIT = 8;
+const recent: LexEntry[] = [];
+const REF_DEF = /^ {0,3}\[[^\]\n]+\]:/m;
+const REUSE_BLOCKS_KEPT = 2;
+
+export const lexStats = { full: 0, incremental: 0 };
+
+function offsetsOf(tokens: Token[]): number[] {
+	const offsets = [0];
+	for (const t of tokens) offsets.push(offsets[offsets.length - 1]! + (t as any).raw.length);
+	return offsets;
+}
+
+function remember(entry: LexEntry): void {
+	const i = recent.findIndex((e) => entry.src.startsWith(e.src));
+	if (i >= 0) recent.splice(i, 1);
+	recent.push(entry);
+	if (recent.length > RECENT_LIMIT) recent.shift();
+}
+
+function lexFrom(previous: LexEntry, src: string, streaming: boolean): Token[] | undefined {
+	const { tokens, offsets } = previous;
+	// Keep everything before the last REUSE_BLOCKS_KEPT non-space tokens.
+	let cut = tokens.length;
+	for (let seen = 0; cut > 0 && seen < REUSE_BLOCKS_KEPT; ) {
+		cut--;
+		if (tokens[cut]!.type !== "space") seen++;
+	}
+	if (cut === 0) return undefined;
+	const offset = offsets[cut]!;
+	// A definition anywhere can change how earlier links lex.
+	if (REF_DEF.test(src)) return undefined;
+	return tokens.slice(0, cut).concat(fullLex(src.slice(offset), streaming));
+}
+
 export function lex(markdown: string, streaming: boolean): Token[] {
-	const tokens = (streaming ? lexers.streaming : lexers.final).lexer(markdown);
-	if (streaming) trimPartialClosingFence(tokens);
+	const src = markdown.includes("\r") ? markdown.replace(/\r\n?/g, "\n") : markdown;
+	let previous: LexEntry | undefined;
+	for (const entry of recent) {
+		if (entry.src.length <= src.length && src.startsWith(entry.src) && (!previous || entry.src.length > previous.src.length)) previous = entry;
+	}
+
+	let tokens = previous ? lexFrom(previous, src, streaming) : undefined;
+	if (tokens) lexStats.incremental++;
+	else {
+		tokens = fullLex(src, streaming);
+		lexStats.full++;
+	}
+	const offsets = offsetsOf(tokens);
+	// Only texts whose raws add up exactly can be extended later.
+	if (offsets[offsets.length - 1] === src.length) remember({ src, tokens, offsets });
+
+	if (streaming) {
+		// trimPartialClosingFence mutates the last code token; never touch shared/cached tokens.
+		const last = tokens[tokens.length - 1] as any;
+		if (last && (last.type === "code" || last.type === "list" || last.type === "blockquote")) {
+			tokens = tokens.slice(0, -1).concat(structuredClone(last));
+			trimPartialClosingFence(tokens);
+		}
+	}
 	return tokens;
+}
+
+export function clearLexCache(): void {
+	recent.length = 0;
 }
 
 /** Lex inline markdown only (table cells are already lexed by marked, used for tests). */

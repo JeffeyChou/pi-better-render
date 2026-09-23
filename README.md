@@ -23,8 +23,12 @@ LaTeX formulas as real images, while the answer is still streaming. It is built 
 | Tables | Rounded borders, bold header, `:-:` alignment, CJK widths; columns shrink, then fall back to cards |
 | Math | `$…$`, `\(…\)` inline; `$$…$$`, `\[…\]`, `\begin{align}…` display. Unicode fallback elsewhere |
 
-Only the block that changed is re-rendered on each streaming delta. Earlier blocks are served from
-a cache.
+Streaming cost stays nearly flat as a message grows. Lexing is incremental: only the last two blocks
+are lexed again, and earlier tokens are reused. Rendered blocks are cached by token identity. A
+61k-character answer costs about 0.6 ms per delta (`npm run bench`).
+
+Images are sent together with the frame that shows them. After a full clear, which pi does on
+resize, they are sent again, so formulas survive window resizes.
 
 ## Install
 
