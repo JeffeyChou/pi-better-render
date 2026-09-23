@@ -1,0 +1,42 @@
+{
+  "name": "pi-streaming-preview",
+  "version": "0.1.0",
+  "description": "Streaming-first rich Markdown, code and math rendering for the pi TUI (display-only; never touches LLM context).",
+  "type": "module",
+  "main": "./src/index.ts",
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "bench": "node --import tsx test/bench.ts",
+    "preview": "node --import tsx test/preview.ts"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "markdown",
+    "latex",
+    "mathjax",
+    "kitty",
+    "ghostty"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "mathjax-full": "^3.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "@earendil-works/pi-tui": "^0.86.1"
+  },
+  "license": "MIT"
+}
