@@ -14,7 +14,9 @@ import { setCellDimensions } from "@earendil-works/pi-tui";
 import { createMathRenderer } from "../src/math/formula.ts";
 import { loadMathJaxSync } from "../src/math/mathjax.ts";
 import { noMath } from "../src/render/context.ts";
+import { loadMermaid } from "../src/render/mermaid.ts";
 import { renderMarkdown } from "../src/render/rich-markdown.ts";
+import { setRenderRequester } from "../src/state.ts";
 import { createStyle, plainStyle, type ThemeLike } from "../src/style.ts";
 import { darkTheme } from "./theme.ts";
 
@@ -64,6 +66,8 @@ if (!plain) {
 }
 
 const source = readFileSync(file, "utf8");
+// Static output waits for the diagram renderer; --live shows it arriving (downloaded on first use).
+if (!live && /^ {0,3}(`{3,}|~{3,})\s*mermaid/im.test(source)) await loadMermaid();
 if (stream) {
 	const started = performance.now();
 	let frames = 0;
@@ -89,12 +93,16 @@ async function playLive(): Promise<void> {
 	// Deterministic, token-like chunk sizes (4–24 characters).
 	let seed = 7;
 	const chunk = () => 4 + ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % 21);
+	let last: [string, boolean] = ["", true];
 	const draw = (text: string, streaming: boolean) => {
+		last = [text, streaming];
 		const rows = out.rows || 40;
 		const view = renderMarkdown(text, width, { style, math, streaming }).slice(-rows);
 		// Synchronized output: the terminal shows each frame whole.
 		out.write(`\x1b[?2026h\x1b[H${view.map((line) => `${line}\x1b[0m\x1b[K`).join("\r\n")}\x1b[J\x1b[?2026l`);
 	};
+	// Asynchronous work (the diagram renderer arriving) asks for a redraw, like pi's TUI.
+	setRenderRequester(() => setImmediate(() => draw(...last)));
 	out.write("\x1b[?1049h\x1b[?25l\x1b[2J");
 	// Raw mode so stray key presses are not echoed into the recording.
 	if (process.stdin.isTTY) process.stdin.setRawMode(true).resume();

@@ -16,6 +16,7 @@ import { loadMathJax, mathjaxError, mathjaxReady } from "./math/mathjax.ts";
 import { detectTexBackend } from "./math/tex-backend.ts";
 import { applyPatch, removePatch } from "./patch.ts";
 import { clearLexCache } from "./render/lexer.ts";
+import { depsDir, mermaidEngine } from "./render/mermaid.ts";
 import { cacheStats, clearBlockCache, RichMarkdown } from "./render/rich-markdown.ts";
 import { containsRenderArtifacts, sanitizeMessages } from "./sanitize.ts";
 import { bumpVersion, type MathMode, setRenderRequester, state } from "./state.ts";
@@ -92,12 +93,21 @@ function statusText(): string {
 	const lookups = cacheStats.hits + cacheStats.misses;
 	const avg = mathStats.rendered > 0 ? (mathStats.totalMs / mathStats.rendered).toFixed(1) : "–";
 	return [
-		`rich markdown: ${state.enabled ? "on" : "off"}   math: ${state.math}   line numbers: ${state.lineNumbers ? "on" : "off"}`,
+		`rich markdown: ${state.enabled ? "on" : "off"}   math: ${state.math}   line numbers: ${state.lineNumbers ? "on" : "off"}   mermaid: ${state.mermaid ? "on" : "off"}`,
 		`math engine: ${mathjaxReady() ? "MathJax + resvg" : mathjaxError() ? `unavailable (${mathjaxError()})` : "loading…"}`,
 		`TeX fallback: ${tex ? tex.name : "none"}   images: ${imagesAvailable() ? "kitty placeholders" : "unavailable (Unicode fallback)"}`,
+		`mermaid renderer: ${mermaidStatus()}`,
 		`formulas: ${mathStats.rendered} rendered (avg ${avg} ms), ${mathStats.texRendered} via TeX, ${mathStats.failed} failed`,
 		`block cache: ${lookups ? Math.round((cacheStats.hits / lookups) * 100) : 0}% hits of ${lookups}`,
 	].join("\n");
+}
+
+function mermaidStatus(): string {
+	const { state: engine, error } = mermaidEngine();
+	if (engine === "idle") return "not loaded (downloads on the first diagram)";
+	if (engine === "installing") return `downloading to ${depsDir()}…`;
+	if (engine === "unavailable") return `unavailable (${error})`;
+	return engine;
 }
 
 const COMMANDS = [
@@ -108,6 +118,7 @@ const COMMANDS = [
 	{ value: "math:final", label: "math:final", description: "Render formulas as images after the message ends" },
 	{ value: "math:off", label: "math:off", description: "Never render formulas as images" },
 	{ value: "lines", label: "lines", description: "Toggle code block line numbers" },
+	{ value: "mermaid", label: "mermaid", description: "Toggle drawing mermaid blocks as diagrams" },
 	{ value: "clear-cache", label: "clear-cache", description: "Drop cached renders and terminal images" },
 ];
 
@@ -151,7 +162,7 @@ export default function piBetterRender(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("better-render", {
-		description: "Rich Markdown / math rendering: status | on | off | math:streaming|final|off | lines | clear-cache",
+		description: "Rich Markdown / math rendering: status | on | off | math:streaming|final|off | lines | mermaid | clear-cache",
 		getArgumentCompletions: (prefix) => COMMANDS.filter((c) => c.value.startsWith(prefix.trim())),
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
@@ -170,6 +181,8 @@ export default function piBetterRender(pi: ExtensionAPI): void {
 				state.math = mode;
 			} else if (arg === "lines") {
 				state.lineNumbers = !state.lineNumbers;
+			} else if (arg === "mermaid") {
+				state.mermaid = !state.mermaid;
 			} else if (arg === "clear-cache") {
 				dropCaches();
 			} else {

@@ -7,6 +7,8 @@ export const state = {
 	enabled: true,
 	/** When formulas become images: while streaming, only after message_end, or never. */
 	math: "streaming" as MathMode,
+	/** Draw ```mermaid blocks as diagrams instead of showing their source. */
+	mermaid: true,
 	/** Show line numbers in code blocks. */
 	lineNumbers: false,
 	/** Append context-sanitizer diagnostics to ~/.pi/agent/better-render-debug.log. */

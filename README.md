@@ -30,7 +30,7 @@ built for Ghostty and kitty.
 | Stored message and LLM context | Untouched (display only) | Untouched (display only) | Untouched (read only) | Message content replaced at `message_end`; original restored for the LLM |
 | Terminals with images | Ghostty, kitty | Ghostty, kitty; display formulas also in WezTerm, Warp, iTerm2 | Ghostty, kitty, iTerm2, WezTerm | Those supported by pi's image component |
 | Without images | Unicode approximation | Original LaTeX | – | Original LaTeX |
-| Beyond chat rendering | – | Custom macros and environments | Browser and PDF export, Mermaid, file preview, export tool | Disk cache of PNGs |
+| Beyond chat rendering | Mermaid diagrams as Unicode art | Custom macros and environments | Browser and PDF export, Mermaid, file preview, export tool | Disk cache of PNGs |
 
 Each existing extension covers one part of the problem:
 
@@ -43,7 +43,7 @@ pi-better-render fills the gap between them. It renders the whole answer, Markdo
 math alike, in the chat while it streams, in process, with nothing extra to install.
 
 The others are still the better choice in some cases. For PDF or browser output, or for Mermaid
-diagrams, use pi-markdown-preview. For formula images in iTerm2, WezTerm or Warp, use pi-math.
+diagram types beyond flowchart, sequence, state, class and ER, use pi-markdown-preview. For formula images in iTerm2, WezTerm or Warp, use pi-math.
 (Comparison as of September 2026.)
 
 ## What it renders
@@ -56,6 +56,7 @@ diagrams, use pi-markdown-preview. For formula images in iTerm2, WezTerm or Warp
 | Quotes | `▎` bar. GitHub callouts `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]` |
 | Code | Background block, language label, pi's syntax highlighting, `↪` wraps, optional line numbers, no fences |
 | Tables | Rounded borders, bold header, `:-:` alignment, correct CJK widths. Columns shrink, then fall back to cards |
+| Mermaid | ` ```mermaid ` flowchart, sequence, state, class and ER diagrams drawn with box characters (correct CJK widths). The renderer is downloaded on the first diagram (see below). Other types, invalid source or diagrams wider than the terminal stay as code |
 | Rules | Full-width `─` |
 | Math | See below |
 
@@ -146,12 +147,20 @@ renders.
 - `on` / `off` turns rich rendering on, or switches back to pi's built-in Markdown.
 - `math:streaming`, `math:final` or `math:off` controls when formulas become images.
 - `lines` toggles line numbers in code blocks.
+- `mermaid` toggles drawing ` ```mermaid ` blocks as diagrams (off shows their source).
+  The diagram renderer ([beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid), about
+  11 MB with its layout engine) is not installed with the package. The first ` ```mermaid ` block
+  installs the pinned version with npm into `~/.pi/agent/better-render/deps` in the background; the
+  block shows as code until then and turns into a diagram when it arrives.
 - `clear-cache` drops cached renders and the images sent to the terminal.
 
 Environment variables:
 
 - `PI_BETTER_RENDER_DEBUG=1` logs context-sanitizer checks to `~/.pi/agent/better-render-debug.log`.
 - `PI_BETTER_RENDER_TEX=off|latex|tectonic` picks the TeX fallback.
+- `PI_BETTER_RENDER_MERMAID_INSTALL=0` never downloads the Mermaid renderer (diagrams stay as code
+  unless `beautiful-mermaid` is already installed).
+- `PI_BETTER_RENDER_DEPS_DIR` changes where it is downloaded (default `~/.pi/agent/better-render/deps`).
 - `PI_BETTER_RENDER_PLACEHOLDERS=0|1` overrides terminal detection. 
 
 ## Development

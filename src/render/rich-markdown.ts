@@ -58,7 +58,7 @@ export function renderMarkdown(markdown: string, width: number, options: Omit<Ri
 	const { style, math, streaming } = options;
 	const tokens = lex(markdown, streaming);
 	const ctx: RenderContext = { style, math, width, streaming, listDepth: 0 };
-	const base = `${width}\0${style.key}\0${math.key}\0${state.version}\0${state.lineNumbers ? 1 : 0}\0`;
+	const base = `${width}\0${style.key}\0${math.key}\0${state.version}\0${state.lineNumbers ? 1 : 0}${state.mermaid ? 1 : 0}\0`;
 	const lastIndex = tokens.length - 1;
 	const lines: string[] = [];
 	tokens.forEach((token: any, i) => {
