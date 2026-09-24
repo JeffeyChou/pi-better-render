@@ -1,4 +1,4 @@
-/** Runtime switches shared by the patch, the renderers and the /richmd command. */
+/** Runtime switches shared by the patch, the renderers and the /better-render command. */
 
 export type MathMode = "streaming" | "final" | "off";
 
@@ -9,8 +9,8 @@ export const state = {
 	math: "streaming" as MathMode,
 	/** Show line numbers in code blocks. */
 	lineNumbers: false,
-	/** Append context-sanitizer diagnostics to ~/.pi/agent/richmd-debug.log. */
-	debug: process.env.PI_RICHMD_DEBUG === "1",
+	/** Append context-sanitizer diagnostics to ~/.pi/agent/better-render-debug.log. */
+	debug: process.env.PI_BETTER_RENDER_DEBUG === "1",
 	/** Bumped whenever something that affects rendered output changes (mode, theme, math engine loaded). */
 	version: 0,
 };

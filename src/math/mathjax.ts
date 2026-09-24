@@ -1,5 +1,5 @@
 /**
- * TeX → SVG (MathJax 3, in process) → PNG (resvg, in process).
+ * TeX → SVG (MathJax 4, in process) → PNG (resvg, in process).
  *
  * Both steps are synchronous and take ~1 ms per formula once MathJax is loaded,
  * so formulas can be rasterized inside a render pass while text streams in.
@@ -10,6 +10,7 @@
  * so Kitty never has to stretch the image. Scale: 1ex ≈ 0.5 × cell height,
  * which makes formula text match the terminal font size (same as pi-math).
  */
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 
 export interface Raster {
@@ -53,34 +54,97 @@ export function mathjaxError(): string | undefined {
 	return loadError;
 }
 
+/**
+ * TeX packages to load. Left out: html/texhtml (raw HTML/CSS), noerrors/noundefined
+ * (would hide errors we want to surface), require/autoload/setoptions (runtime
+ * loading and reconfiguration), colorv2/fontsizev3 (v2/v3 compatibility variants).
+ */
+const PACKAGES = [
+	"base", "action", "ams", "amscd", "bbm", "bboldx", "bbox", "begingroup", "boldsymbol", "braket",
+	"bussproofs", "cancel", "cases", "centernot", "color", "colortbl", "configmacros", "dsfont", "empheq",
+	"enclose", "extpfeil", "gensymb", "mathtools", "mhchem", "newcommand", "physics", "tagformat",
+	"textcomp", "textmacros", "unicode", "units", "upgreek", "verb",
+];
+
+/** Package directory → configuration module, where the file name is not <Name>Configuration.js. */
+const CONFIG_FILE: Record<string, string> = {
+	amscd: "AmsCdConfiguration",
+	configmacros: "ConfigMacrosConfiguration",
+	tagformat: "TagFormatConfiguration",
+	textmacros: "TextMacrosConfiguration",
+};
+
+/** Font extensions that some packages need for their glyphs. */
+const FONT_EXTENSIONS: Record<string, string> = {
+	mhchem: "@mathjax/mathjax-mhchem-font-extension/js/svg.js",
+	bbm: "@mathjax/mathjax-bbm-font-extension/js/svg.js",
+	bboldx: "@mathjax/mathjax-bboldx-font-extension/js/svg.js",
+	dsfont: "@mathjax/mathjax-dsfont-font-extension/js/svg.js",
+};
+
+/** Common LaTeX macros that no MathJax package defines. */
+const MACROS = {
+	bm: ["\\boldsymbol{#1}", 1],
+	llbracket: "\\mathopen{\u27E6}",
+	rrbracket: "\\mathclose{\u27E7}",
+};
+
+const TAG = /\\tag(\*?)\{([^{}]*)\}/g;
+
+/**
+ * A tagged display becomes a 100%-wide SVG, which has no size to fit onto the
+ * cell grid. For a single-line formula with one tag, typeset the tag as a
+ * trailing label instead.
+ */
+function untag(tex: string): string {
+	const tags = [...tex.matchAll(TAG)];
+	if (tags.length !== 1 || tex.includes("\\\\")) return tex;
+	const [, star, label] = tags[0]!;
+	return `${tex.replace(TAG, "")}\\qquad\\text{${star ? label : `(${label})`}}`;
+}
+
 function createEngine(): Engine {
 	const require = createRequire(import.meta.url);
-	const { liteAdaptor } = require("mathjax-full/js/adaptors/liteAdaptor.js");
-	const { RegisterHTMLHandler } = require("mathjax-full/js/handlers/html.js");
-	const { TeX } = require("mathjax-full/js/input/tex.js");
-	const { AllPackages } = require("mathjax-full/js/input/tex/AllPackages.js");
-	const { mathjax } = require("mathjax-full/js/mathjax.js");
-	const { SVG } = require("mathjax-full/js/output/svg.js");
+	const { mathjax } = require("@mathjax/src/js/mathjax.js");
+	// Font data for less common characters is split into files loaded on demand; load them synchronously.
+	mathjax.asyncLoad = (name: string) => require(name);
+	mathjax.asyncIsSynchronous = true;
+	const { liteAdaptor } = require("@mathjax/src/js/adaptors/liteAdaptor.js");
+	const { RegisterHTMLHandler } = require("@mathjax/src/js/handlers/html.js");
+	const { TeX } = require("@mathjax/src/js/input/tex.js");
+	const { SVG } = require("@mathjax/src/js/output/svg.js");
+	const { MathJaxNewcmFont } = require("@mathjax/mathjax-newcm-font/js/svg.js");
 	const { Resvg } = require("@resvg/resvg-js");
+
+	const texDir = "@mathjax/src/js/input/tex";
+	for (const name of PACKAGES) {
+		const file = CONFIG_FILE[name] ?? `${name[0]!.toUpperCase()}${name.slice(1)}Configuration`;
+		require(`${texDir}/${name}/${file}.js`);
+		const extension = FONT_EXTENSIONS[name];
+		if (extension) {
+			const data = Object.values(require(extension))[0];
+			MathJaxNewcmFont.addExtension(data, extension.replace(/\.js$/, "/dynamic"));
+		}
+	}
 
 	const adaptor = liteAdaptor({ cjkCharWidth: 1, unknownCharWidth: 0.6, unknownCharHeight: 0.8 });
 	RegisterHTMLHandler(adaptor);
-	// html allows raw HTML/CSS; noerrors/noundefined would hide errors we want to surface.
-	const packages = (AllPackages as string[]).filter((p) => !["html", "noerrors", "noundefined"].includes(p));
 	const input = new TeX({
-		packages,
+		packages: PACKAGES,
+		macros: MACROS,
 		maxBuffer: 20_000,
 		maxMacros: 1_000,
 		formatError: (_jax: unknown, error: Error) => {
 			throw error;
 		},
 	});
-	const output = new SVG({ fontCache: "none", mtextInheritFont: true });
+	// Inline line breaking would split a formula into several <svg> pieces; the terminal wraps cells instead.
+	const output = new SVG({ fontData: MathJaxNewcmFont, fontCache: "none", mtextInheritFont: true, linebreaks: { inline: false } });
 	const doc = mathjax.document("", { InputJax: input, OutputJax: output });
 	return {
 		toSvg(tex, display) {
 			input.reset?.();
-			const node = doc.convert(tex, { display });
+			const node = doc.convert(untag(tex), { display });
 			const html: string = adaptor.outerHTML(node);
 			const start = html.indexOf("<svg");
 			const end = html.lastIndexOf("</svg>");
@@ -154,12 +218,34 @@ export function centeredCanvas(inner: string, contentW: number, contentH: number
 	);
 }
 
+/**
+ * Fonts for text MathJax leaves as <text> (\\text{…} with CJK and other characters
+ * outside its fonts). Loading every system font costs ~100 ms per image; a few
+ * files with wide coverage cost ~10 ms. Falls back to all system fonts.
+ */
+const TEXT_FONT_CANDIDATES = [
+	"/System/Library/Fonts/Hiragino Sans GB.ttc",
+	"/System/Library/Fonts/STHeiti Medium.ttc",
+	"/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+	"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+	"/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+	"/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+	"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+	"C:\\Windows\\Fonts\\msyh.ttc",
+	"C:\\Windows\\Fonts\\arial.ttf",
+];
+let textFonts: string[] | undefined;
+
+function textFontOptions(): { loadSystemFonts: boolean; fontFiles?: string[] } {
+	textFonts ??= TEXT_FONT_CANDIDATES.filter((file) => existsSync(file)).slice(0, 2);
+	return textFonts.length > 0 ? { loadSystemFonts: false, fontFiles: textFonts } : { loadSystemFonts: true };
+}
+
 export function rasterizeSvg(svg: string): Buffer {
 	if (!engine) throw new MathError("resvg not loaded");
-	const needsFonts = svg.includes("<text");
 	return engine.Resvg
 		? new engine.Resvg(svg, {
-				font: { loadSystemFonts: needsFonts },
+				font: svg.includes("<text") ? textFontOptions() : { loadSystemFonts: false },
 				shapeRendering: 2,
 				textRendering: 2,
 				logLevel: "error",

@@ -56,8 +56,8 @@ const CHUNK = 4096;
 
 /** Terminals known to implement Unicode placeholders. */
 export function placeholderTerminal(env: NodeJS.ProcessEnv = process.env): boolean {
-	if (env.PI_RICHMD_PLACEHOLDERS === "1") return true;
-	if (env.PI_RICHMD_PLACEHOLDERS === "0") return false;
+	if (env.PI_BETTER_RENDER_PLACEHOLDERS === "1") return true;
+	if (env.PI_BETTER_RENDER_PLACEHOLDERS === "0") return false;
 	if (env.TMUX || env.STY) return false;
 	const program = env.TERM_PROGRAM?.toLowerCase() ?? "";
 	const term = env.TERM?.toLowerCase() ?? "";

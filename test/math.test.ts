@@ -28,9 +28,20 @@ test("MathJax renders AMS constructs to PNG on the cell grid", () => {
 	}
 });
 
+test("MathJax 4 packages, font extensions, extra macros and single tags typeset", () => {
+	for (const tex of ["\\dv{f}{x}+\\pdv{f}{y}+\\norm{v}", "\\ce{2H2 + O2 -> 2H2O}", "\\mathbbm{1}\\mathds{1}", "\\bm{x}\\llbracket A\\rrbracket", "\\qty{3}{m}", "E=mc^2\\tag{1}", "\\text{中文} x"]) {
+		assert.doesNotThrow(() => rasterize({ ...base, tex, display: true, maxRows: 24 }), tex);
+	}
+});
+
 test("inline formulas fit in exactly one row", () => {
 	const r = rasterize({ ...base, tex: "\\sum_{i=1}^{n} x_i^2", display: false, maxRows: 1, fitRows: true });
 	assert.equal(r.rows, 1);
+});
+
+test("inline formulas stay one image (no MathJax 4 inline line breaking)", () => {
+	const r = rasterize({ ...base, tex: "z=w_1x_1+w_2x_2-\\theta", display: false, maxRows: 1, fitRows: true });
+	assert.ok(r.columns > 10, `only ${r.columns} columns`);
 });
 
 test("TeX errors surface as MathError", () => {
@@ -61,7 +72,7 @@ test("end to end: formulas become placeholders, transmitted once, width respecte
 	setKittyWriter((d) => writes.push(d));
 	setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 	setCellDimensions({ widthPx: 9, heightPx: 18 });
-	process.env.PI_RICHMD_PLACEHOLDERS = "1";
+	process.env.PI_BETTER_RENDER_PLACEHOLDERS = "1";
 	const math = createMathRenderer(() => "#d4d4d4");
 	const md = "Inline $a^2+b^2=c^2$ here.\n\n\\[\n\\boxed{b=-\\theta}\n\\]\n";
 	const lines = renderMarkdown(md, 60, { style: plainStyle(), math, streaming: false });

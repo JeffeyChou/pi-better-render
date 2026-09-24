@@ -7,11 +7,11 @@ import { lex } from "../src/render/lexer.ts";
 import { renderMarkdown } from "../src/render/rich-markdown.ts";
 import { createStyle } from "../src/style.ts";
 import { darkTheme } from "./theme.ts";
-loadMathJaxSync(); setKittyWriter(undefined); process.env.PI_RICHMD_PLACEHOLDERS = "1";
+loadMathJaxSync(); setKittyWriter(undefined); process.env.PI_BETTER_RENDER_PLACEHOLDERS = "1";
 setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 const style = createStyle(darkTheme(), () => undefined);
 const math = createMathRenderer(() => style.mathColor);
-const base = readFileSync("/Users/jiefengzhou/Documents/vscode/pi-streaming-preview/test/fixtures/perceptron.md", "utf8");
+const base = readFileSync(new URL("./fixtures/perceptron.md", import.meta.url), "utf8");
 for (const mult of [1, 4, 16]) {
   const src = Array.from({ length: mult }, (_, i) => base.replaceAll("$", "$").replace("Block 7", `Block ${i}`)).join("\n\n");
   const step = 20; // ~ one delta

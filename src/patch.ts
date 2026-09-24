@@ -18,7 +18,7 @@ import { state } from "./state.ts";
 
 export type RichFactory = (text: string, paddingX: number, streaming: boolean, transform: MarkdownTransform | undefined) => Component;
 
-const PATCH = Symbol.for("pi-streaming-preview.assistant-patch");
+const PATCH = Symbol.for("pi-better-render.assistant-patch");
 const PATCH_VERSION = 1;
 
 interface PatchRecord {

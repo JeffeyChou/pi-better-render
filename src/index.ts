@@ -1,5 +1,5 @@
 /**
- * pi-streaming-preview — streaming-first rich Markdown, code and math for pi's TUI.
+ * pi-better-render — streaming-first rich Markdown, code and math for pi's TUI.
  *
  * Display-only by construction: assistant messages are rendered by swapping
  * pi's Markdown component (see patch.ts); message content, the session file
@@ -54,7 +54,7 @@ function refreshAll(): void {
 
 /** Grab pi's TUI instance through a widget factory, then remove the widget again. */
 function captureTui(ctx: ExtensionContext): void {
-	const key = "pi-streaming-preview:probe";
+	const key = "pi-better-render:probe";
 	try {
 		ctx.ui.setWidget(key, (instance) => {
 			tui = instance;
@@ -81,7 +81,7 @@ function dropCaches(): void {
 function debugLog(line: string): void {
 	if (!state.debug) return;
 	try {
-		appendFileSync(join(homedir(), ".pi", "agent", "richmd-debug.log"), `[${new Date().toISOString()}] ${line}\n`);
+		appendFileSync(join(homedir(), ".pi", "agent", "better-render-debug.log"), `[${new Date().toISOString()}] ${line}\n`);
 	} catch {
 		// ignore
 	}
@@ -111,7 +111,7 @@ const COMMANDS = [
 	{ value: "clear-cache", label: "clear-cache", description: "Drop cached renders and terminal images" },
 ];
 
-export default function piStreamingPreview(pi: ExtensionAPI): void {
+export default function piBetterRender(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		ui = ctx.ui;
@@ -150,7 +150,7 @@ export default function piStreamingPreview(pi: ExtensionAPI): void {
 		return result ? { messages: result.messages } : undefined;
 	});
 
-	pi.registerCommand("richmd", {
+	pi.registerCommand("better-render", {
 		description: "Rich Markdown / math rendering: status | on | off | math:streaming|final|off | lines | clear-cache",
 		getArgumentCompletions: (prefix) => COMMANDS.filter((c) => c.value.startsWith(prefix.trim())),
 		handler: async (args, ctx) => {

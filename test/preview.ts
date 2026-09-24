@@ -1,10 +1,13 @@
 /**
  * Render a Markdown file in the current terminal, outside pi.
  *
- *   npm run preview -- test/fixtures/perceptron.md [--width 90] [--plain] [--stream]
+ *   npm run preview -- test/fixtures/perceptron.md [--width 90] [--plain] [--stream] [--live [--cps 700] [--hold 3]]
  *
  * Uses pi's dark theme colors. In Ghostty/kitty, formulas show as images.
  * --stream replays the file in small chunks to exercise the streaming path.
+ * --live animates the stream on screen, following its tail like pi does
+ *   (for demos and recordings): --cps characters per second, --hold seconds
+ *   to keep the final frame (0 = until a key is pressed).
  */
 import { readFileSync } from "node:fs";
 import { setCellDimensions } from "@earendil-works/pi-tui";
@@ -46,6 +49,8 @@ const file = args.find((a) => !a.startsWith("--")) ?? "test/fixtures/perceptron.
 const width = Number(args[args.indexOf("--width") + 1]) || Math.min(process.stdout.columns || 100, 110);
 const plain = args.includes("--plain");
 const stream = args.includes("--stream");
+const live = args.includes("--live");
+const option = (name: string, fallback: number) => (args.includes(name) ? Number(args[args.indexOf(name) + 1]) : fallback);
 
 const theme: ThemeLike = darkTheme();
 const style = plain ? plainStyle() : createStyle(theme, () => undefined);
@@ -69,5 +74,44 @@ if (stream) {
 	const ms = performance.now() - started;
 	console.error(`streamed ${frames} frames, ${(ms / frames).toFixed(2)} ms/frame`);
 }
-const lines = renderMarkdown(source, width, { style, math, streaming: false });
-process.stdout.write(lines.join("\n") + "\n");
+if (live) {
+	await playLive();
+} else {
+	const lines = renderMarkdown(source, width, { style, math, streaming: false });
+	process.stdout.write(lines.join("\n") + "\n");
+}
+
+async function playLive(): Promise<void> {
+	const out = process.stdout;
+	const cps = option("--cps", 700);
+	const hold = option("--hold", 3);
+	const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+	// Deterministic, token-like chunk sizes (4–24 characters).
+	let seed = 7;
+	const chunk = () => 4 + ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % 21);
+	const draw = (text: string, streaming: boolean) => {
+		const rows = out.rows || 40;
+		const view = renderMarkdown(text, width, { style, math, streaming }).slice(-rows);
+		// Synchronized output: the terminal shows each frame whole.
+		out.write(`\x1b[?2026h\x1b[H${view.map((line) => `${line}\x1b[0m\x1b[K`).join("\r\n")}\x1b[J\x1b[?2026l`);
+	};
+	out.write("\x1b[?1049h\x1b[?25l\x1b[2J");
+	// Raw mode so stray key presses are not echoed into the recording.
+	if (process.stdin.isTTY) process.stdin.setRawMode(true).resume();
+	try {
+		let shown = 0;
+		while (shown < source.length) {
+			const size = chunk();
+			shown = Math.min(source.length, shown + size);
+			draw(source.slice(0, shown), shown < source.length);
+			await sleep((size / cps) * 1000);
+		}
+		draw(source, false);
+		if (hold > 0) await sleep(hold * 1000);
+		else await new Promise((resolve) => process.stdin.once("data", resolve));
+	} finally {
+		out.write("\x1b[?25h\x1b[?1049l");
+		if (process.stdin.isTTY) process.stdin.setRawMode(false);
+		process.stdin.pause();
+	}
+}

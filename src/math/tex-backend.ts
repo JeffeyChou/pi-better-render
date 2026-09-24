@@ -58,7 +58,7 @@ const PREAMBLE = String.raw`\usepackage{amsmath,amssymb,amsfonts}
 \pagestyle{empty}`;
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-	const dir = mkdtempSync(join(tmpdir(), "pi-richmd-"));
+	const dir = mkdtempSync(join(tmpdir(), "pi-better-render-"));
 	try {
 		return await fn(dir);
 	} finally {
@@ -112,10 +112,10 @@ ${PREAMBLE}
 
 let detected: TexBackend | null | undefined;
 
-/** Find a TeX toolchain (cached). Set PI_RICHMD_TEX=off to disable, =tectonic/latex to force. */
+/** Find a TeX toolchain (cached). Set PI_BETTER_RENDER_TEX=off to disable, =tectonic/latex to force. */
 export function detectTexBackend(): TexBackend | undefined {
 	if (detected !== undefined) return detected ?? undefined;
-	const pref = process.env.PI_RICHMD_TEX?.toLowerCase();
+	const pref = process.env.PI_BETTER_RENDER_TEX?.toLowerCase();
 	detected = null;
 	if (pref === "off") return undefined;
 	const latex = which("latex");

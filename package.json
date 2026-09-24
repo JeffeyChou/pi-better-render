@@ -1,20 +1,7 @@
 {
-  "name": "pi-streaming-preview",
+  "name": "pi-better-render",
   "version": "0.1.0",
   "description": "Streaming-first rich Markdown, code and math rendering for the pi TUI (display-only; never touches LLM context).",
-  "type": "module",
-  "main": "./src/index.ts",
-  "pi": {
-    "extensions": [
-      "./src/index.ts"
-    ]
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test test/*.test.ts",
-    "bench": "node --import tsx test/bench.ts",
-    "preview": "node --import tsx test/preview.ts"
-  },
   "keywords": [
     "pi-package",
     "pi",
@@ -24,19 +11,49 @@
     "kitty",
     "ghostty"
   ],
+  "author": "Jiefeng Zhou",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "bench": "node --import tsx test/bench.ts",
+    "preview": "node --import tsx test/preview.ts",
+    "prepublishOnly": "npm run typecheck && npm test"
+  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*"
   },
   "dependencies": {
-    "@resvg/resvg-js": "^2.6.2",
-    "mathjax-full": "^3.2.2"
+    "@mathjax/mathjax-bbm-font-extension": "^4.1.3",
+    "@mathjax/mathjax-bboldx-font-extension": "^4.1.3",
+    "@mathjax/mathjax-dsfont-font-extension": "^4.1.3",
+    "@mathjax/mathjax-mhchem-font-extension": "^4.1.3",
+    "@mathjax/src": "^4.1.3",
+    "@resvg/resvg-js": "^2.6.2"
   },
   "devDependencies": {
+    "@earendil-works/pi-tui": "^0.86.1",
     "@types/node": "^24.0.0",
     "tsx": "^4.20.0",
-    "typescript": "^5.9.0",
-    "@earendil-works/pi-tui": "^0.86.1"
+    "typescript": "^5.9.0"
   },
-  "license": "MIT"
+  "publishConfig": {
+    "access": "public"
+  }
 }
