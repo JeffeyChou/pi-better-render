@@ -183,8 +183,10 @@ npm run preview -- test/fixtures/perceptron.md --live     # animate the stream o
 MathJax is a development dependency. `npm run build` bundles the parts the renderer uses into
 `vendor/` (about 12 MB, most of it on-demand font data), so an install is about 15 MB instead of
 118 MB. `vendor/` is committed because pi installs git packages with `npm install --omit=dev` and
-no build step; rebuild and commit it after upgrading MathJax. Without `vendor/`, the code loads
-MathJax from `node_modules` directly.
+no build step. MathJax is pinned to exact versions and the build is deterministic, so `vendor/`
+only changes when those pins change (the build refuses ranges or a drifted `node_modules`);
+`vendor/README.md` lists what it contains. Without `vendor/`, the code loads MathJax from
+`node_modules` directly.
 
 Publishing:
 
