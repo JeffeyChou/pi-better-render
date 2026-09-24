@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { test } from "node:test";
 import { setCapabilities, setCellDimensions, visibleWidth } from "@earendil-works/pi-tui";
 import { createMathRenderer } from "../src/math/formula.ts";
@@ -159,4 +161,21 @@ test("frame hook: images travel with frames and are re-sent after a full clear",
 	uninstall();
 	deleteImages(undefined);
 	assert.deepEqual(prepareFrame(line), { insertAt: 0, transmissions: "" }, "forgotten after deleteImages");
+});
+
+test("the MathJax bundle loads on-demand fonts under plain Node (no tsx)", { skip: !existsSync(new URL("../vendor/mathjax.cjs", import.meta.url)) && "vendor/ not built" }, () => {
+	// tsx papers over CommonJS files mistaken for ESM ("type": "module"); pi's loader does not.
+	const script = `
+		const lib = require("./vendor/mathjax.cjs");
+		const adaptor = lib.liteAdaptor();
+		lib.RegisterHTMLHandler(adaptor);
+		const doc = lib.mathjax.document("", { InputJax: new lib.TeX({ packages: lib.packages }), OutputJax: new lib.SVG({ fontData: lib.MathJaxNewcmFont, fontCache: "none" }) });
+		const svg = adaptor.outerHTML(doc.convert("\\\\mathfrak{g}\\\\mathscr{F}\\\\text{Привет}", { display: true }));
+		const loaded = Object.keys(require.cache).filter((f) => f.includes("newcm-dynamic")).length;
+		if (!lib.bundled || !svg.includes("<path") || svg.includes("merror") || loaded === 0) throw new Error("bundle failed: " + loaded);
+		console.log("ok", loaded);
+	`;
+	const result = spawnSync(process.execPath, ["-e", script], { cwd: new URL("..", import.meta.url), encoding: "utf8" });
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /^ok \d+/);
 });

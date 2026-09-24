@@ -68,7 +68,10 @@ diagram types beyond flowchart, sequence, state, class and ER, use pi-markdown-p
   (`\ce`), braket, cancel, cases, empheq, bbm/dsfont/bboldx (`\mathbbm`, `\mathds`), color,
   boldsymbol, upgreek, gensymb, units, extpfeil, centernot, bussproofs, amscd.
 - **Extra macros:** `\bm`, `\llbracket`/`\rrbracket`, and a single `\tag{…}`.
-- **CJK text:** text inside formulas, such as `\text{中文}`, is rendered with a system CJK font.
+- **CJK text:** text inside formulas, such as `\text{中文}` or `\text{한국어}`, is rendered with a
+  system CJK font. Without one (common on Linux servers and containers), Noto Sans SC (10 MB, Han
+  and kana) or KR (6 MB, Hangul) is downloaded once into `~/.pi/agent/better-render/fonts`, checked
+  against a pinned SHA-256. The formula shows as text until the font arrives, then as an image.
 - **Fallback:** if MathJax rejects a formula and a local `latex`+`dvipng` or `tectonic` is
   installed, that engine typesets it in the background. Where images are not possible, formulas
   use pi's Unicode approximation.
@@ -161,12 +164,15 @@ Environment variables:
 - `PI_BETTER_RENDER_MERMAID_INSTALL=0` never downloads the Mermaid renderer (diagrams stay as code
   unless `beautiful-mermaid` is already installed).
 - `PI_BETTER_RENDER_DEPS_DIR` changes where it is downloaded (default `~/.pi/agent/better-render/deps`).
+- `PI_BETTER_RENDER_FONT_DOWNLOAD=0` never downloads a CJK font; `PI_BETTER_RENDER_FONTS_DIR`
+  changes where it goes.
 - `PI_BETTER_RENDER_PLACEHOLDERS=0|1` overrides terminal detection. 
 
 ## Development
 
 ```sh
-npm test                                                  # unit tests
+npm test                                                  # unit tests (rebuilds vendor/ first)
+npm run build                                             # rebuild vendor/ (the trimmed MathJax)
 npm run typecheck
 npm run bench                                             # streaming cost per delta
 npm run preview -- test/fixtures/perceptron.md            # render a file in this terminal
@@ -174,16 +180,24 @@ npm run preview -- test/fixtures/perceptron.md --stream   # also time the stream
 npm run preview -- test/fixtures/perceptron.md --live     # animate the stream on screen
 ```
 
+MathJax is a development dependency. `npm run build` bundles the parts the renderer uses into
+`vendor/` (about 12 MB, most of it on-demand font data), so an install is about 15 MB instead of
+118 MB. `vendor/` is committed because pi installs git packages with `npm install --omit=dev` and
+no build step; rebuild and commit it after upgrading MathJax. Without `vendor/`, the code loads
+MathJax from `node_modules` directly.
+
 Publishing:
 
 ```sh
-npm pack --dry-run   # the tarball holds src/, README.md, LICENSE and package.json
+npm pack --dry-run   # the tarball holds src/, vendor/, README.md, LICENSE and package.json
 npm publish          # runs typecheck and tests first (prepublishOnly)
 ```
 
 The `pi-package` keyword lists the package in the [pi package gallery](https://pi.dev/packages).
 
 ## Credits
+
+[MathJax](https://www.mathjax.org) (Apache-2.0) is bundled in `vendor/`; see `vendor/LICENSE`.
 
 The Kitty diacritic table and the formula-scaling approach are adapted from
 [Fadouse/pi-math](https://github.com/Fadouse/pi-math) (MIT).

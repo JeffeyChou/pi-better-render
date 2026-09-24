@@ -12,6 +12,8 @@
  */
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import { textFontOptions } from "./cjk-font.ts";
 
 export interface Raster {
 	base64: string;
@@ -54,34 +56,6 @@ export function mathjaxError(): string | undefined {
 	return loadError;
 }
 
-/**
- * TeX packages to load. Left out: html/texhtml (raw HTML/CSS), noerrors/noundefined
- * (would hide errors we want to surface), require/autoload/setoptions (runtime
- * loading and reconfiguration), colorv2/fontsizev3 (v2/v3 compatibility variants).
- */
-const PACKAGES = [
-	"base", "action", "ams", "amscd", "bbm", "bboldx", "bbox", "begingroup", "boldsymbol", "braket",
-	"bussproofs", "cancel", "cases", "centernot", "color", "colortbl", "configmacros", "dsfont", "empheq",
-	"enclose", "extpfeil", "gensymb", "mathtools", "mhchem", "newcommand", "physics", "tagformat",
-	"textcomp", "textmacros", "unicode", "units", "upgreek", "verb",
-];
-
-/** Package directory → configuration module, where the file name is not <Name>Configuration.js. */
-const CONFIG_FILE: Record<string, string> = {
-	amscd: "AmsCdConfiguration",
-	configmacros: "ConfigMacrosConfiguration",
-	tagformat: "TagFormatConfiguration",
-	textmacros: "TextMacrosConfiguration",
-};
-
-/** Font extensions that some packages need for their glyphs. */
-const FONT_EXTENSIONS: Record<string, string> = {
-	mhchem: "@mathjax/mathjax-mhchem-font-extension/js/svg.js",
-	bbm: "@mathjax/mathjax-bbm-font-extension/js/svg.js",
-	bboldx: "@mathjax/mathjax-bboldx-font-extension/js/svg.js",
-	dsfont: "@mathjax/mathjax-dsfont-font-extension/js/svg.js",
-};
-
 /** Common LaTeX macros that no MathJax package defines. */
 const MACROS = {
 	bm: ["\\boldsymbol{#1}", 1],
@@ -109,29 +83,24 @@ function fixFullWidth(svg: string): string {
 	return fixed + svg.slice(open.length);
 }
 
+/** MathJax modules: the trimmed bundle when built (published package), else node_modules (development). */
+function loadLibrary(): any {
+	const require = createRequire(import.meta.url);
+	const bundle = fileURLToPath(new URL("../../vendor/mathjax.cjs", import.meta.url));
+	return require(existsSync(bundle) ? bundle : "./mathjax-lib.cjs");
+}
+
+export function mathjaxBundled(): boolean {
+	return library?.bundled === true;
+}
+
+let library: any;
+
 function createEngine(): Engine {
 	const require = createRequire(import.meta.url);
-	const { mathjax } = require("@mathjax/src/js/mathjax.js");
-	// Font data for less common characters is split into files loaded on demand; load them synchronously.
-	mathjax.asyncLoad = (name: string) => require(name);
-	mathjax.asyncIsSynchronous = true;
-	const { liteAdaptor } = require("@mathjax/src/js/adaptors/liteAdaptor.js");
-	const { RegisterHTMLHandler } = require("@mathjax/src/js/handlers/html.js");
-	const { TeX } = require("@mathjax/src/js/input/tex.js");
-	const { SVG } = require("@mathjax/src/js/output/svg.js");
-	const { MathJaxNewcmFont } = require("@mathjax/mathjax-newcm-font/js/svg.js");
+	library = loadLibrary();
+	const { mathjax, liteAdaptor, RegisterHTMLHandler, TeX, SVG, MathJaxNewcmFont, packages: PACKAGES } = library;
 	const { Resvg } = require("@resvg/resvg-js");
-
-	const texDir = "@mathjax/src/js/input/tex";
-	for (const name of PACKAGES) {
-		const file = CONFIG_FILE[name] ?? `${name[0]!.toUpperCase()}${name.slice(1)}Configuration`;
-		require(`${texDir}/${name}/${file}.js`);
-		const extension = FONT_EXTENSIONS[name];
-		if (extension) {
-			const data = Object.values(require(extension))[0];
-			MathJaxNewcmFont.addExtension(data, extension.replace(/\.js$/, "/dynamic"));
-		}
-	}
 
 	const adaptor = liteAdaptor({ cjkCharWidth: 1, unknownCharWidth: 0.6, unknownCharHeight: 0.8 });
 	RegisterHTMLHandler(adaptor);
@@ -229,34 +198,11 @@ export function centeredCanvas(inner: string, contentW: number, contentH: number
 	);
 }
 
-/**
- * Fonts for text MathJax leaves as <text> (\\text{…} with CJK and other characters
- * outside its fonts). Loading every system font costs ~100 ms per image; a few
- * files with wide coverage cost ~10 ms. Falls back to all system fonts.
- */
-const TEXT_FONT_CANDIDATES = [
-	"/System/Library/Fonts/Hiragino Sans GB.ttc",
-	"/System/Library/Fonts/STHeiti Medium.ttc",
-	"/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-	"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-	"/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-	"/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
-	"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-	"C:\\Windows\\Fonts\\msyh.ttc",
-	"C:\\Windows\\Fonts\\arial.ttf",
-];
-let textFonts: string[] | undefined;
-
-function textFontOptions(): { loadSystemFonts: boolean; fontFiles?: string[] } {
-	textFonts ??= TEXT_FONT_CANDIDATES.filter((file) => existsSync(file)).slice(0, 2);
-	return textFonts.length > 0 ? { loadSystemFonts: false, fontFiles: textFonts } : { loadSystemFonts: true };
-}
-
 export function rasterizeSvg(svg: string): Buffer {
 	if (!engine) throw new MathError("resvg not loaded");
 	return engine.Resvg
 		? new engine.Resvg(svg, {
-				font: svg.includes("<text") ? textFontOptions() : { loadSystemFonts: false },
+				font: svg.includes("<text") ? textFontOptions(svg) : { loadSystemFonts: false },
 				shapeRendering: 2,
 				textRendering: 2,
 				logLevel: "error",

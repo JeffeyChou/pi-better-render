@@ -10,6 +10,7 @@ import { getCapabilities, getCellDimensions, getPngDimensions } from "@earendil-
 import type { MathRenderer } from "../render/context.ts";
 import { bumpVersion, requestRender, state } from "../state.ts";
 import { allocateId, MAX_PLACEHOLDER_CELLS, registerImage, placeholderRows, placeholderTerminal } from "./kitty.ts";
+import { FontPendingError } from "./cjk-font.ts";
 import { centeredCanvas, MathError, mathjaxReady, type Raster, rasterize, rasterizeSvg } from "./mathjax.ts";
 import { detectTexBackend } from "./tex-backend.ts";
 
@@ -143,6 +144,8 @@ export function createMathRenderer(getColor: () => string): MathRenderer {
 				entry = remember(key, { ...raster, id: allocateId() });
 				mathStats.rendered++;
 			} catch (error) {
+				// A font for its \text is downloading: text fallback now, image once it lands (not cached).
+				if (error instanceof FontPendingError) return undefined;
 				const failure = error instanceof MathError ? error : new MathError(String(error));
 				const outcome = fallbackToTex(failure, tex, display, color, cell.widthPx, cell.heightPx, columns, maxRows);
 				if (outcome === "pending") return undefined;

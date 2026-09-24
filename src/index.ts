@@ -10,9 +10,10 @@ import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { type ExtensionAPI, type ExtensionContext, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { textFontStatus } from "./math/cjk-font.ts";
 import { createMathRenderer, imagesAvailable, mathStats, clearFormulaCache } from "./math/formula.ts";
 import { deleteImages, installFrameHook } from "./math/kitty.ts";
-import { loadMathJax, mathjaxError, mathjaxReady } from "./math/mathjax.ts";
+import { loadMathJax, mathjaxBundled, mathjaxError, mathjaxReady } from "./math/mathjax.ts";
 import { detectTexBackend } from "./math/tex-backend.ts";
 import { applyPatch, removePatch } from "./patch.ts";
 import { clearLexCache } from "./render/lexer.ts";
@@ -94,8 +95,9 @@ function statusText(): string {
 	const avg = mathStats.rendered > 0 ? (mathStats.totalMs / mathStats.rendered).toFixed(1) : "–";
 	return [
 		`rich markdown: ${state.enabled ? "on" : "off"}   math: ${state.math}   line numbers: ${state.lineNumbers ? "on" : "off"}   mermaid: ${state.mermaid ? "on" : "off"}`,
-		`math engine: ${mathjaxReady() ? "MathJax + resvg" : mathjaxError() ? `unavailable (${mathjaxError()})` : "loading…"}`,
+		`math engine: ${mathjaxReady() ? `MathJax${mathjaxBundled() ? " (bundled)" : ""} + resvg` : mathjaxError() ? `unavailable (${mathjaxError()})` : "loading…"}`,
 		`TeX fallback: ${tex ? tex.name : "none"}   images: ${imagesAvailable() ? "kitty placeholders" : "unavailable (Unicode fallback)"}`,
+		`text fonts: ${textFontStatus()}`,
 		`mermaid renderer: ${mermaidStatus()}`,
 		`formulas: ${mathStats.rendered} rendered (avg ${avg} ms), ${mathStats.texRendered} via TeX, ${mathStats.failed} failed`,
 		`block cache: ${lookups ? Math.round((cacheStats.hits / lookups) * 100) : 0}% hits of ${lookups}`,
