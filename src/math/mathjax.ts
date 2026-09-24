@@ -89,18 +89,24 @@ const MACROS = {
 	rrbracket: "\\mathclose{\u27E7}",
 };
 
-const TAG = /\\tag(\*?)\{([^{}]*)\}/g;
-
 /**
- * A tagged display becomes a 100%-wide SVG, which has no size to fit onto the
- * cell grid. For a single-line formula with one tag, typeset the tag as a
- * trailing label instead.
+ * A tagged display is a 100%-wide SVG (the tag sits at the right margin), which
+ * has no size to fit onto the cell grid. Pin it to its minimum width so the tag
+ * follows the formula at minimum spacing. Its content is laid out in pixels
+ * (the first group scales font units by `s`), so the viewBox is the natural
+ * size in font units times `s`.
  */
-function untag(tex: string): string {
-	const tags = [...tex.matchAll(TAG)];
-	if (tags.length !== 1 || tex.includes("\\\\")) return tex;
-	const [, star, label] = tags[0]!;
-	return `${tex.replace(TAG, "")}\\qquad\\text{${star ? label : `(${label})`}}`;
+function fixFullWidth(svg: string): string {
+	const open = /^<svg\b[^>]*>/.exec(svg)?.[0];
+	if (!open?.includes(' width="100%"')) return svg;
+	const minWidth = Number(/min-width:\s*([\d.]+)ex/.exec(open)?.[1]);
+	const box = /\sdata-mjx-viewBox="([^"]+)"/.exec(open)?.[1]?.split(/\s+/).map(Number);
+	const scale = Number(/^<svg\b[^>]*>\s*<g[^>]*\stransform="scale\(([\d.]+)/.exec(svg)?.[1]);
+	if (!(minWidth > 0) || box?.length !== 4 || !(scale > 0)) return svg;
+	const fixed = open
+		.replace(' width="100%"', ` width="${minWidth}ex"`)
+		.replace(/\sdata-mjx-viewBox="[^"]+"/, ` viewBox="0 0 ${box[2]! * scale} ${box[3]! * scale}"`);
+	return fixed + svg.slice(open.length);
 }
 
 function createEngine(): Engine {
@@ -141,15 +147,20 @@ function createEngine(): Engine {
 	// Inline line breaking would split a formula into several <svg> pieces; the terminal wraps cells instead.
 	const output = new SVG({ fontData: MathJaxNewcmFont, fontCache: "none", mtextInheritFont: true, linebreaks: { inline: false } });
 	const doc = mathjax.document("", { InputJax: input, OutputJax: output });
+	// Text MathJax has no glyphs for (CJK in \text{…}) is measured at 1em per character. Declaring the
+	// surrounding font's x-height equal to the math font's makes MathJax draw it at 1em too, instead
+	// of scaling it to a 0.5em x-height, which left a gap after it.
+	const metrics = { em: 16, ex: 16 * output.font.params.x_height };
 	return {
 		toSvg(tex, display) {
 			input.reset?.();
-			const node = doc.convert(untag(tex), { display });
+			const node = doc.convert(tex, { display, ...metrics });
 			const html: string = adaptor.outerHTML(node);
 			const start = html.indexOf("<svg");
 			const end = html.lastIndexOf("</svg>");
 			if (start < 0 || end < start) throw new MathError("MathJax produced no SVG");
-			const svg = html.slice(start, end + 6);
+			// data-latex repeats the TeX source unescaped (a "<" would break the XML); resvg does not need it.
+			const svg = fixFullWidth(html.slice(start, end + 6).replace(/\sdata-latex="[^"]*"/g, ""));
 			if (svg.includes('data-mml-node="merror"')) throw new MathError("TeX error");
 			return svg;
 		},

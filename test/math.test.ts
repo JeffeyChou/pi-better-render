@@ -39,6 +39,17 @@ test("inline formulas fit in exactly one row", () => {
 	assert.equal(r.rows, 1);
 });
 
+test("tagged displays and formulas with < typeset (MathJax 4 full-width SVG, unescaped data-latex)", () => {
+	for (const tex of [
+		"\\hat y=\n\\begin{cases}1, & w^\\top x+b\\ge 0,\\\\\n0, & w^\\top x+b<0.\n\\end{cases}\n\\tag{1}",
+		"\\begin{align}a&=b\\tag{2}\\\\c&=d\\tag{3}\\end{align}",
+		"0<x<1",
+	]) {
+		const r = rasterize({ ...base, tex, display: true, maxRows: 24 });
+		assert.ok(r.columns < 80, `${tex} fills the whole width`);
+	}
+});
+
 test("inline formulas stay one image (no MathJax 4 inline line breaking)", () => {
 	const r = rasterize({ ...base, tex: "z=w_1x_1+w_2x_2-\\theta", display: false, maxRows: 1, fitRows: true });
 	assert.ok(r.columns > 10, `only ${r.columns} columns`);

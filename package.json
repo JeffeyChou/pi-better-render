@@ -13,6 +13,14 @@
   ],
   "author": "Jiefeng Zhou",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JeffeyChou/pi-better-render.git"
+  },
+  "homepage": "https://github.com/JeffeyChou/pi-better-render#readme",
+  "bugs": {
+    "url": "https://github.com/JeffeyChou/pi-better-render/issues"
+  },
   "type": "module",
   "main": "./src/index.ts",
   "files": [
@@ -23,7 +31,9 @@
   "pi": {
     "extensions": [
       "./src/index.ts"
-    ]
+    ],
+    "video": "https://cdn.jsdelivr.net/gh/JeffeyChou/pi-better-render@main/assets/demo.mp4",
+    "image": "https://cdn.jsdelivr.net/gh/JeffeyChou/pi-better-render@main/assets/demo.gif"
   },
   "engines": {
     "node": ">=20"
