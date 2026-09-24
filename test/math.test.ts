@@ -173,9 +173,12 @@ test("the MathJax bundle loads on-demand fonts under plain Node (no tsx)", { ski
 		const svg = adaptor.outerHTML(doc.convert("\\\\mathfrak{g}\\\\mathscr{F}\\\\text{Привет}", { display: true }));
 		const loaded = Object.keys(require.cache).filter((f) => f.includes("newcm-dynamic")).length;
 		if (!lib.bundled || !svg.includes("<path") || svg.includes("merror") || loaded === 0) throw new Error("bundle failed: " + loaded);
-		console.log("ok", loaded);
+		console.log("ok " + loaded);
 	`;
-	const result = spawnSync(process.execPath, ["-e", script], { cwd: new URL("..", import.meta.url), encoding: "utf8" });
+	// A plain string, and no forced colors: FORCE_COLOR from an interactive shell would color a logged number.
+	const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: "1" };
+	delete env.FORCE_COLOR;
+	const result = spawnSync(process.execPath, ["-e", script], { cwd: new URL("..", import.meta.url), encoding: "utf8", env });
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /^ok \d+/);
 });
