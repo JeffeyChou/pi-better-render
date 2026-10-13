@@ -3,7 +3,8 @@
  *
  *   npm run preview -- test/fixtures/perceptron.md [--width 90] [--plain] [--stream] [--live [--cps 700] [--hold 3]]
  *
- * Uses pi's dark theme colors. In Ghostty/kitty, formulas show as images.
+ * Uses pi's dark theme colors. In terminals with Kitty graphics (Ghostty,
+ * kitty, WezTerm, …), formulas show as images.
  * --stream replays the file in small chunks to exercise the streaming path.
  * --live animates the stream on screen, following its tail like pi does
  *   (for demos and recordings): --cps characters per second, --hold seconds
@@ -12,6 +13,7 @@
 import { readFileSync } from "node:fs";
 import { setCellDimensions } from "@earendil-works/pi-tui";
 import { createMathRenderer } from "../src/math/formula.ts";
+import { installFrameHook } from "../src/math/kitty.ts";
 import { loadMathJaxSync } from "../src/math/mathjax.ts";
 import { noMath } from "../src/render/context.ts";
 import { loadMermaid } from "../src/render/mermaid.ts";
@@ -65,6 +67,10 @@ if (!plain) {
 	math = createMathRenderer(() => style.mathColor);
 }
 
+// Write through the same frame hook as pi, so images are sent (or placed directly) like there.
+const terminal = { write: (data: string) => void process.stdout.write(data) };
+if (!plain) installFrameHook(terminal);
+
 const source = readFileSync(file, "utf8");
 // Static output waits for the diagram renderer; --live shows it arriving (downloaded on first use).
 if (!live && /^ {0,3}(`{3,}|~{3,})\s*mermaid/im.test(source)) await loadMermaid();
@@ -82,11 +88,11 @@ if (live) {
 	await playLive();
 } else {
 	const lines = renderMarkdown(source, width, { style, math, streaming: false });
-	process.stdout.write(lines.join("\n") + "\n");
+	terminal.write(lines.join("\n") + "\n");
 }
 
 async function playLive(): Promise<void> {
-	const out = process.stdout;
+	const out = { rows: process.stdout.rows, write: (data: string) => terminal.write(data) };
 	const cps = option("--cps", 700);
 	const hold = option("--hold", 3);
 	const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

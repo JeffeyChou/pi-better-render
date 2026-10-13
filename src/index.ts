@@ -11,8 +11,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { type ExtensionAPI, type ExtensionContext, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { textFontStatus } from "./math/cjk-font.ts";
-import { createMathRenderer, imagesAvailable, mathStats, clearFormulaCache } from "./math/formula.ts";
-import { deleteImages, installFrameHook } from "./math/kitty.ts";
+import { createMathRenderer, mathStats, clearFormulaCache } from "./math/formula.ts";
+import { deleteImages, forgetImages, imageMode, installFrameHook } from "./math/kitty.ts";
 import { loadMathJax, mathjaxBundled, mathjaxError, mathjaxReady } from "./math/mathjax.ts";
 import { detectTexBackend } from "./math/tex-backend.ts";
 import { applyPatch, removePatch } from "./patch.ts";
@@ -72,12 +72,17 @@ function captureTui(ctx: ExtensionContext): void {
 	uninstallFrameHook = tui?.terminal && typeof tui.terminal.write === "function" ? installFrameHook(tui.terminal) : undefined;
 }
 
-/** Forget everything rendered: the next frames re-rasterize and re-send what is visible. */
-function dropCaches(): void {
+/**
+ * Forget everything rendered: the next frames re-rasterize and re-send what is
+ * visible. Terminal images are freed only on an explicit clear-cache; at
+ * session end they stay, so the formulas left in the scrollback keep showing.
+ */
+function dropCaches(freeTerminalImages: boolean): void {
 	clearBlockCache();
 	clearLexCache();
 	clearFormulaCache();
-	deleteImages();
+	if (freeTerminalImages) deleteImages();
+	else forgetImages();
 }
 
 function debugLog(line: string): void {
@@ -96,12 +101,19 @@ function statusText(): string {
 	return [
 		`rich markdown: ${state.enabled ? "on" : "off"}   math: ${state.math}   line numbers: ${state.lineNumbers ? "on" : "off"}   mermaid: ${state.mermaid ? "on" : "off"}`,
 		`math engine: ${mathjaxReady() ? `MathJax${mathjaxBundled() ? " (bundled)" : ""} + resvg` : mathjaxError() ? `unavailable (${mathjaxError()})` : "loading…"}`,
-		`TeX fallback: ${tex ? tex.name : "none"}   images: ${imagesAvailable() ? "kitty placeholders" : "unavailable (Unicode fallback)"}`,
+		`TeX fallback: ${tex ? tex.name : "none"}   images: ${imageStatus()}`,
 		`text fonts: ${textFontStatus()}`,
 		`mermaid renderer: ${mermaidStatus()}`,
 		`formulas: ${mathStats.rendered} rendered (avg ${avg} ms), ${mathStats.texRendered} via TeX, ${mathStats.failed} failed`,
 		`block cache: ${lookups ? Math.round((cacheStats.hits / lookups) * 100) : 0}% hits of ${lookups}`,
 	].join("\n");
+}
+
+function imageStatus(): string {
+	const mode = imageMode();
+	if (mode === "placeholder") return "kitty placeholders";
+	if (mode === "direct") return "kitty direct placements";
+	return "unavailable (Unicode fallback)";
 }
 
 function mermaidStatus(): string {
@@ -145,7 +157,7 @@ export default function piBetterRender(pi: ExtensionAPI): void {
 		removePatch();
 		uninstallFrameHook?.();
 		uninstallFrameHook = undefined;
-		dropCaches();
+		dropCaches(false);
 		setRenderRequester(undefined);
 		tui = undefined;
 		ui = undefined;
@@ -186,7 +198,7 @@ export default function piBetterRender(pi: ExtensionAPI): void {
 			} else if (arg === "mermaid") {
 				state.mermaid = !state.mermaid;
 			} else if (arg === "clear-cache") {
-				dropCaches();
+				dropCaches(true);
 			} else {
 				ctx.ui.notify(`Unknown argument "${arg}". Try: ${COMMANDS.map((c) => c.value).join(", ")}`, "error");
 				return;
