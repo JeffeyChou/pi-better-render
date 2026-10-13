@@ -2,7 +2,8 @@
 
 Streaming-first rich rendering for [pi](https://pi.dev)'s TUI. Markdown, code blocks, tables and
 LaTeX formulas are rendered as the answer streams in, with formulas shown as real images. It is
-built for Ghostty and kitty.
+built for Ghostty and kitty, and also shows formula images in other terminals with Kitty graphics,
+such as WezTerm.
 
 ![Streaming Markdown, tables, code and formulas in Ghostty](assets/demo.gif)
 
@@ -15,7 +16,7 @@ built for Ghostty and kitty.
   1 ms from TeX to PNG.
 - **Text-like images.** Formula images use Kitty Unicode placeholders. Each image is sent once;
   after that it behaves as ordinary text cells, so it wraps, scrolls and diffs like text. Inline
-  formulas sit inside the line.
+  formulas sit inside the line. Formulas stay in the scrollback after pi exits.
 
 ## Compared with other pi extensions
 
@@ -28,7 +29,7 @@ built for Ghostty and kitty.
 | Math engine | MathJax 4, with optional TeX fallback | MathJax 3 | Pandoc MathML + MathJax in Chromium | `latex` + `dvipng` per formula |
 | Needs beyond `npm install` | Nothing (TeX is optional) | Nothing | Pandoc and Chromium; LaTeX for PDF | A TeX installation |
 | Stored message and LLM context | Untouched (display only) | Untouched (display only) | Untouched (read only) | Message content replaced at `message_end`; original restored for the LLM |
-| Terminals with images | Ghostty, kitty | Ghostty, kitty; display formulas also in WezTerm, Warp, iTerm2 | Ghostty, kitty, iTerm2, WezTerm | Those supported by pi's image component |
+| Terminals with images | Ghostty, kitty; WezTerm, Warp via direct placements | Ghostty, kitty; display formulas also in WezTerm, Warp, iTerm2 | Ghostty, kitty, iTerm2, WezTerm | Those supported by pi's image component |
 | Without images | Unicode approximation | Original LaTeX | – | Original LaTeX |
 | Beyond chat rendering | Mermaid diagrams as Unicode art | Custom macros and environments | Browser and PDF export, Mermaid, file preview, export tool | Disk cache of PNGs |
 
@@ -43,7 +44,7 @@ pi-better-render fills the gap between them. It renders the whole answer, Markdo
 math alike, in the chat while it streams, in process, with nothing extra to install.
 
 The others are still the better choice in some cases. For PDF or browser output, or for Mermaid
-diagram types beyond flowchart, sequence, state, class and ER, use pi-markdown-preview. For formula images in iTerm2, WezTerm or Warp, use pi-math.
+diagram types beyond flowchart, sequence, state, class and ER, use pi-markdown-preview. For formula images in iTerm2, use pi-math.
 (Comparison as of September 2026.)
 
 ## What it renders
@@ -97,8 +98,9 @@ Streaming cost stays nearly flat as a message grows, for these reasons:
 - **Formula cache.** Formula rasters are cached by TeX, color and cell size, and each image is sent
   to the terminal only once.
 - **Images travel with their frame.** An image is sent together with the frame that first shows
-  it. pi does a full clear on resize; after one, images are sent again, so formulas survive window
-  resizes.
+  it. pi does a full clear on resize, and its fullscreen mode deletes all image placements when its
+  own images change; after either, images are sent or placed again, so formulas survive resizes and
+  redraws. Images are never deleted when pi exits, so formulas left in the scrollback keep showing.
 
 Run `npm run bench` to reproduce the streaming numbers.
 
@@ -120,7 +122,7 @@ assistant delta ─▶ incremental lexer (marked) ─▶ block renderer + cache 
 | Code highlighting | pi's theme highlighter |
 | Math typesetting | [MathJax 4](https://www.mathjax.org/) (`@mathjax/src`, New Computer Modern font), in process and synchronous |
 | Rasterizing | [`@resvg/resvg-js`](https://github.com/yisibl/resvg-js) (Rust, native). Canvases are sized to whole terminal cells, so images are never stretched |
-| Terminal images | Kitty graphics protocol with Unicode placeholders (Ghostty, kitty) |
+| Terminal images | Kitty graphics protocol: Unicode placeholders (Ghostty, kitty), or direct placements of one image slice per row (WezTerm, Warp and other terminals with Kitty graphics) |
 | Fallback | Optional `latex`+`dvipng` or `tectonic` in a sandboxed child process. No shell escape, paranoid file access, 15 s timeout |
 
 ## Install
@@ -138,9 +140,11 @@ npm install
 pi install ./path/to/pi-better-render                 # or: pi -e ./src/index.ts
 ```
 
-Images need Ghostty or kitty. They are unavailable inside tmux/screen and in terminals without Kitty
-Unicode placeholders. There, formulas use pi's Unicode approximation and everything else still
-renders.
+Images need a terminal with the Kitty graphics protocol. Ghostty and kitty use Unicode placeholders.
+Other terminals that pi detects as Kitty-capable (WezTerm, Warp) get direct placements: the frame
+going to the terminal places one slice of the image per row, in the cells where its placeholders
+would be. Images are unavailable inside tmux/screen and in terminals without Kitty graphics. There,
+formulas use pi's Unicode approximation and everything else still renders.
 
 ## Commands
 
@@ -155,7 +159,8 @@ renders.
   11 MB with its layout engine) is not installed with the package. The first ` ```mermaid ` block
   installs the pinned version with npm into `~/.pi/agent/better-render/deps` in the background; the
   block shows as code until then and turns into a diagram when it arrives.
-- `clear-cache` drops cached renders and the images sent to the terminal.
+- `clear-cache` drops cached renders and frees the images sent to the terminal (formulas already in
+  the scrollback go blank). Ending a session never frees them.
 
 Environment variables:
 
@@ -166,7 +171,8 @@ Environment variables:
 - `PI_BETTER_RENDER_DEPS_DIR` changes where it is downloaded (default `~/.pi/agent/better-render/deps`).
 - `PI_BETTER_RENDER_FONT_DOWNLOAD=0` never downloads a CJK font; `PI_BETTER_RENDER_FONTS_DIR`
   changes where it goes.
-- `PI_BETTER_RENDER_PLACEHOLDERS=0|1` overrides terminal detection. 
+- `PI_BETTER_RENDER_IMAGES=placeholder|direct|off` overrides terminal detection.
+  `PI_BETTER_RENDER_PLACEHOLDERS=0|1` still works (`1` forces placeholders, `0` turns images off).
 
 ## Development
 

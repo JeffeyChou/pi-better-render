@@ -6,10 +6,10 @@
  * formula failed everywhere. MathJax failures are retried with a local TeX
  * engine in the background when one is installed.
  */
-import { getCapabilities, getCellDimensions, getPngDimensions } from "@earendil-works/pi-tui";
+import { getCellDimensions, getPngDimensions } from "@earendil-works/pi-tui";
 import type { MathRenderer } from "../render/context.ts";
 import { bumpVersion, requestRender, state } from "../state.ts";
-import { allocateId, MAX_PLACEHOLDER_CELLS, registerImage, placeholderRows, placeholderTerminal } from "./kitty.ts";
+import { allocateId, imageMode, MAX_PLACEHOLDER_CELLS, registerImage, placeholderRows } from "./kitty.ts";
 import { FontPendingError } from "./cjk-font.ts";
 import { centeredCanvas, MathError, mathjaxReady, type Raster, rasterize, rasterizeSvg } from "./mathjax.ts";
 import { detectTexBackend } from "./tex-backend.ts";
@@ -34,7 +34,7 @@ export function clearFormulaCache(): void {
 }
 
 export function imagesAvailable(): boolean {
-	return getCapabilities().images === "kitty" && placeholderTerminal();
+	return imageMode() !== "off";
 }
 
 function remember(key: string, value: Placed | MathError): Placed | MathError {
@@ -161,7 +161,7 @@ export function createMathRenderer(getColor: () => string): MathRenderer {
 
 	return {
 		get key() {
-			return `${state.math}|${mathjaxReady() ? 1 : 0}|${imagesAvailable() ? 1 : 0}|${getColor()}|${getCellDimensions().widthPx}x${getCellDimensions().heightPx}`;
+			return `${state.math}|${mathjaxReady() ? 1 : 0}|${imageMode()}|${getColor()}|${getCellDimensions().widthPx}x${getCellDimensions().heightPx}`;
 		},
 		inline(tex, _display, streaming) {
 			if (!active(streaming)) return undefined;

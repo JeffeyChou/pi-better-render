@@ -76,7 +76,7 @@ test("placeholders are one column per cell and transmit once", () => {
 	assert.ok(rows[0]!.startsWith("\x1b[38;2;18;52;86m"));
 	const seq = transmitSequence("A".repeat(9000), 5, 3, 1);
 	assert.equal(seq.match(/\x1b_G/g)!.length, 3);
-	assert.ok(seq.startsWith("\x1b_Ga=T,f=100,q=2,U=1,i=5,c=3,r=1,m=1;"));
+	assert.ok(seq.startsWith("\x1b_Ga=T,f=100,q=2,U=1,i=5,p=1,c=3,r=1,m=1;"));
 	assert.ok(!rows.join("").includes("\x1b[58"), "no SGR 58: pi-tui mis-parses it into bogus attributes");
 });
 
