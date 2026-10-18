@@ -106,7 +106,7 @@ test("PI_BETTER_RENDER_FONT_DOWNLOAD=0 never downloads", () => {
 // A real CJK font stands in for the download, so the formula actually rasterizes with it.
 const realFont = ["/System/Library/Fonts/Hiragino Sans GB.ttc", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"].find((f) => existsSync(f));
 
-test("end to end: a \\text{中文} formula is text while the font downloads, an image after", { skip: !realFont && "no CJK font to stand in for the download" }, async () => {
+test("end to end: a \\text{中文} formula is text while the font downloads, an image after", { skip: !realFont && "no CJK font to stand in for the download", timeout: 5000 }, async (t) => {
 	const data = readFileSync(realFont!);
 	const { fetch, release } = gatedFetch(data);
 	configureTextFonts({ system: none, generic: [], dir, fetch, downloads: { han: spec(data, "Real.ttc"), hangul: spec(data, "RealKR.ttc") } });
@@ -122,7 +122,10 @@ test("end to end: a \\text{中文} formula is text while the font downloads, an 
 	const before = render();
 	assert.ok(!before.includes("\u{10EEEE}"), "fallback while downloading");
 	assert.ok(before.includes("面积"));
+	// Font verification and disk writes may take longer than a fixed delay.
+	const ready = new Promise<void>((resolve) => setRenderRequester(resolve));
+	t.after(() => setRenderRequester(undefined));
 	release();
-	await settle();
+	await ready;
 	assert.ok(render().includes("\u{10EEEE}"), "image once the font is there");
 });
