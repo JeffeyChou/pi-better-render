@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after, type TestContext, test } from "node:test";
 import { setCapabilities, setCellDimensions } from "@earendil-works/pi-tui";
 import { configureTextFonts, FontPendingError, scriptsIn, textFontOptions, textFontStatus } from "../src/math/cjk-font.ts";
 import { createMathRenderer } from "../src/math/formula.ts";
@@ -37,7 +37,14 @@ function gatedFetch(data: Buffer) {
 	return { fetch, calls, release };
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+/**
+ * Resolves on the re-render a finished or failed download requests. Font
+ * verification and disk writes may take longer than any fixed delay.
+ */
+function downloadSettled(t: TestContext): Promise<void> {
+	t.after(() => setRenderRequester(undefined));
+	return new Promise((resolve) => setRenderRequester(resolve));
+}
 
 test("scripts are detected per character class", () => {
 	assert.deepEqual(scriptsIn("x + y"), []);
@@ -55,11 +62,10 @@ test("a system font is used when one covers the script", () => {
 	assert.equal(calls.length, 0);
 });
 
-test("a missing font downloads once, formulas wait for it, then it is used", async () => {
+test("a missing font downloads once, formulas wait for it, then it is used", { timeout: 5000 }, async (t) => {
 	const { fetch, calls, release } = gatedFetch(bytes);
 	configureTextFonts({ system: none, generic: [], dir, fetch, downloads: { han: spec(bytes), hangul: spec(bytes, "FakeKR.ttf") } });
-	let redraws = 0;
-	setRenderRequester(() => redraws++);
+	const settled = downloadSettled(t);
 	const version = state.version;
 
 	assert.throws(() => textFontOptions(svgWith("中文")), FontPendingError);
@@ -70,8 +76,8 @@ test("a missing font downloads once, formulas wait for it, then it is used", asy
 	assert.deepEqual(textFontOptions(svgWith("Привет")), { loadSystemFonts: true });
 
 	release();
-	await settle();
-	assert.ok(redraws > 0 && state.version > version, "re-render requested");
+	await settled;
+	assert.ok(state.version > version, "re-render requested");
 	const path = join(dir, "Fake.ttf");
 	assert.ok(existsSync(path));
 	assert.deepEqual(textFontOptions(svgWith("中文")), { loadSystemFonts: false, fontFiles: [path] });
@@ -81,15 +87,15 @@ test("a missing font downloads once, formulas wait for it, then it is used", asy
 	configureTextFonts({ system: none, generic: [], dir, fetch, downloads: { han: spec(bytes), hangul: spec(bytes, "FakeKR.ttf") } });
 	assert.deepEqual(textFontOptions(svgWith("中文")), { loadSystemFonts: false, fontFiles: [path] });
 	assert.equal(calls.length, 1);
-	setRenderRequester(undefined);
 });
 
-test("a corrupted download is rejected and not retried", async () => {
+test("a corrupted download is rejected and not retried", { timeout: 5000 }, async (t) => {
 	const { fetch, calls, release } = gatedFetch(Buffer.from("tampered"));
 	configureTextFonts({ system: none, generic: [], dir, fetch, downloads: { han: spec(bytes, "Other.ttf"), hangul: spec(bytes, "OtherKR.ttf") } });
+	const settled = downloadSettled(t);
 	assert.throws(() => textFontOptions(svgWith("中文")), FontPendingError);
 	release();
-	await settle();
+	await settled;
 	assert.ok(!existsSync(join(dir, "Other.ttf")));
 	assert.match(textFontStatus(), /checksum mismatch/);
 	assert.deepEqual(textFontOptions(svgWith("中文")), { loadSystemFonts: true });
@@ -122,10 +128,8 @@ test("end to end: a \\text{中文} formula is text while the font downloads, an 
 	const before = render();
 	assert.ok(!before.includes("\u{10EEEE}"), "fallback while downloading");
 	assert.ok(before.includes("面积"));
-	// Font verification and disk writes may take longer than a fixed delay.
-	const ready = new Promise<void>((resolve) => setRenderRequester(resolve));
-	t.after(() => setRenderRequester(undefined));
+	const settled = downloadSettled(t);
 	release();
-	await ready;
+	await settled;
 	assert.ok(render().includes("\u{10EEEE}"), "image once the font is there");
 });
