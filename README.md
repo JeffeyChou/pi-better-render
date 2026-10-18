@@ -61,6 +61,18 @@ diagram types beyond flowchart, sequence, state, class and ER, use pi-markdown-p
 | Rules | Full-width `─` |
 | Math | See below |
 
+### Copying code
+
+In Pi's fullscreen mode, completed code blocks have a **Copy** button in the
+upper-right corner. Click it to copy the source without fences, line numbers or
+visual line wrapping. The button briefly shows **Copied** on success. If the clipboard is unavailable,
+it stays **Copy** and an error notification explains the failure. Keyboard focus stays in the editor, and dragging over
+the code body still selects text normally.
+
+Buttons are hidden in regular terminal mode, on unfinished fences, or when the
+block is too narrow. Mermaid blocks rendered as diagrams do not have a code-copy
+button; use `/better-render mermaid` to show their source instead.
+
 ### Math
 
 - **Delimiters:** inline `$…$` and `\(…\)`; display `$$…$$`, `\[…\]` and `\begin{align}…` (plus the

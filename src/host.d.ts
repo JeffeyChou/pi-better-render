@@ -13,6 +13,7 @@ declare module "@earendil-works/pi-coding-agent" {
 	}
 
 	export function getMarkdownTheme(): MarkdownTheme;
+	export function copyToClipboard(text: string): Promise<void>;
 
 	export interface ExtensionUIContext {
 		readonly theme: any;
