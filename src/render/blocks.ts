@@ -1,5 +1,5 @@
 import { renderCode } from "./code.ts";
-import type { RenderContext } from "./context.ts";
+import { offsetCodeActions, type RenderContext } from "./context.ts";
 import { latexFallback, renderInline } from "./inline.ts";
 import { lexInline } from "./lexer.ts";
 import { renderTable } from "./table.ts";
@@ -20,7 +20,7 @@ export function renderBlocks(tokens: any[], ctx: RenderContext, tight = false): 
 	const out: string[] = [];
 	for (const token of tokens) {
 		if (token.type === "space" || token.type === "def") continue;
-		const lines = renderBlock(token, ctx);
+		const lines = renderBlock(token, offsetCodeActions(ctx, 0, out.length + (out.length > 0 && !tight ? 1 : 0)));
 		if (lines.length === 0) continue;
 		if (out.length > 0 && !tight) out.push("");
 		out.push(...lines);
@@ -104,7 +104,7 @@ function renderList(token: any, ctx: RenderContext): string[] {
 			markerWidth = token.ordered ? markerWidth + 2 : 1;
 		}
 		const indent = markerWidth + 1;
-		const childCtx: RenderContext = { ...ctx, width: Math.max(1, ctx.width - indent), listDepth: ctx.listDepth + 1 };
+		const childCtx: RenderContext = { ...offsetCodeActions(ctx, indent, out.length + (index > 0 && token.loose ? 1 : 0)), width: Math.max(1, ctx.width - indent), listDepth: ctx.listDepth + 1 };
 		const tokens = (item.tokens ?? []).filter((t: any) => t.type !== "checkbox");
 		const body = renderBlocks(tokens, childCtx, !item.loose);
 		const lines = body.length > 0 ? body : [""];
@@ -137,7 +137,7 @@ function renderQuote(token: any, ctx: RenderContext): string[] {
 	const color = callout?.color ?? "mdQuoteBorder";
 	const bar = style.fg(color, "▎");
 	const innerCtx: RenderContext = {
-		...ctx,
+		...offsetCodeActions(ctx, 2, callout ? 1 : 0),
 		width: Math.max(1, ctx.width - 2),
 		textStyle: callout ? ctx.textStyle : (t) => style.fg("mdQuote", t),
 	};

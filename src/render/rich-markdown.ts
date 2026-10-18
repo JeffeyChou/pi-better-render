@@ -6,22 +6,24 @@
  * source. Appending text therefore re-renders only the block that changed
  * (normally the last one); everything above is a cache hit.
  */
-import type { Component } from "@earendil-works/pi-tui";
+import { sliceByColumn, visibleWidth, type Component, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { state } from "../state.ts";
 import type { Style } from "../style.ts";
 import { renderBlock } from "./blocks.ts";
-import type { MathRenderer, RenderContext } from "./context.ts";
+import { codeButtonText, type CopyStatus } from "./code-action.ts";
+import type { CodeAction, MathRenderer, RenderContext } from "./context.ts";
 import { lex } from "./lexer.ts";
 
 export type MarkdownTransform = (markdown: string, availableWidth: number) => string;
 
 const BLOCK_CACHE_LIMIT = 4000;
-const blockCache = new Map<string, string[]>();
-const byToken = new WeakMap<object, { context: string; lines: string[] }>();
+type RenderedBlock = { lines: string[]; actions: CodeAction[] };
+const blockCache = new Map<string, RenderedBlock>();
+const byToken = new WeakMap<object, { context: string; block: RenderedBlock }>();
 
 export const cacheStats = { hits: 0, misses: 0 };
 
-function cached(key: string, compute: () => string[]): string[] {
+function cached(key: string, compute: () => RenderedBlock): RenderedBlock {
 	const hit = blockCache.get(key);
 	if (hit) {
 		cacheStats.hits++;
@@ -51,10 +53,13 @@ export interface RichMarkdownOptions {
 	streaming: boolean;
 	paddingX: number;
 	transform?: MarkdownTransform;
+	copyCode?: (code: string) => Promise<void>;
+	onCopyError?: (error: unknown) => void;
+	requestRender?: () => void;
 }
 
 /** Render markdown to terminal lines of at most `width` columns (no padding). */
-export function renderMarkdown(markdown: string, width: number, options: Omit<RichMarkdownOptions, "paddingX" | "transform">): string[] {
+export function renderMarkdown(markdown: string, width: number, options: Omit<RichMarkdownOptions, "paddingX" | "transform">, actions?: CodeAction[]): string[] {
 	const { style, math, streaming } = options;
 	const tokens = lex(markdown, streaming);
 	const ctx: RenderContext = { style, math, width, streaming, listDepth: 0 };
@@ -67,21 +72,26 @@ export function renderMarkdown(markdown: string, width: number, options: Omit<Ri
 		// blocks render exactly as in the final message (and share its cache entries),
 		// unless math is deferred until message_end.
 		const phase = !streaming ? "f" : i === lastIndex ? "s" : state.math === "final" ? "m" : "f";
-		const context = base + phase;
+		const context = base + phase + (actions ? "buttons" : "plain");
 		// Fast path: incremental lexing hands back the same token objects for the
 		// stable prefix, so identity lookups avoid hashing long block sources.
 		const known = byToken.get(token);
-		let block: string[];
+		let block: RenderedBlock;
 		if (known && known.context === context) {
 			cacheStats.hits++;
-			block = known.lines;
+			block = known.block;
 		} else {
-			block = cached(`${context}\0${token.type}\0${token.raw}`, () => renderBlock(token, { ...ctx, streaming: phase !== "f" }));
-			byToken.set(token, { context, lines: block });
+			block = cached(`${context}\0${token.type}\0${token.raw}`, () => {
+				const buttons: CodeAction[] = [];
+				const rendered = renderBlock(token, { ...ctx, streaming: phase !== "f", onCode: actions ? action => buttons.push(action) : undefined });
+				return { lines: rendered, actions: buttons };
+			});
+			byToken.set(token, { context, block });
 		}
-		if (block.length === 0) return;
+		if (block.lines.length === 0) return;
 		if (lines.length > 0) lines.push("");
-		lines.push(...block);
+		for (const action of block.actions) actions?.push({ ...action, y: action.y + lines.length });
+		lines.push(...block.lines);
 	});
 	return lines;
 }
@@ -90,6 +100,10 @@ export class RichMarkdown implements Component {
 	private cacheWidth = -1;
 	private cacheVersion = "";
 	private cacheLines: string[] = [];
+	private actions: CodeAction[] = [];
+	private pressed?: CodeAction;
+	private copying = false;
+	private feedback?: { action: CodeAction; status: CopyStatus };
 
 	constructor(
 		private readonly text: string,
@@ -98,7 +112,7 @@ export class RichMarkdown implements Component {
 
 	render(width: number): string[] {
 		const version = `${this.options.style.key}\0${this.options.math.key}\0${state.version}`;
-		if (width === this.cacheWidth && version === this.cacheVersion) return this.cacheLines;
+		if (width === this.cacheWidth && version === this.cacheVersion) return this.withFeedback();
 
 		const padding = Math.max(0, this.options.paddingX);
 		const contentWidth = Math.max(1, width - padding * 2);
@@ -109,14 +123,76 @@ export class RichMarkdown implements Component {
 			// transformers are display sugar; ignore failures like pi does
 		}
 		const prefix = " ".repeat(padding);
+		const actions: CodeAction[] = [];
 		const lines = markdown.trim()
-			? renderMarkdown(markdown, contentWidth, this.options).map((line) => (line ? prefix + line : line))
+			? renderMarkdown(markdown, contentWidth, this.options, this.options.copyCode ? actions : undefined).map((line) => (line ? prefix + line : line))
 			: [];
+		this.actions = actions.map(action => ({ ...action, x: action.x + padding }));
+		this.pressed = undefined;
+		this.feedback = undefined;
 
 		this.cacheWidth = width;
 		this.cacheVersion = version;
 		this.cacheLines = lines;
 		return lines;
+	}
+
+	private withFeedback(): string[] {
+		if (!this.feedback) return this.cacheLines;
+		const { action, status } = this.feedback;
+		const lines = [...this.cacheLines];
+		const line = lines[action.y];
+		if (line === undefined) return lines;
+		lines[action.y] = sliceByColumn(line, 0, action.x, true)
+			+ this.options.style.fg("accent", codeButtonText(status))
+			+ sliceByColumn(line, action.x + action.width, visibleWidth(line), true);
+		return lines;
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (!this.options.copyCode || event.button !== "left" || event.shift || event.alt || event.ctrl) return;
+		const hit = this.actions.find(action => event.y === action.y && event.x >= action.x && event.x < action.x + action.width);
+		if (event.type === "press" && hit) {
+			this.pressed = hit;
+			return { handled: true, capture: true, render: false };
+		}
+		if (event.type === "drag" && this.pressed) {
+			if (hit !== this.pressed) this.pressed = undefined;
+			return { handled: true, render: false };
+		}
+		if (event.type === "release") {
+			const pressed = this.pressed;
+			this.pressed = undefined;
+			if (!pressed) return;
+			if (hit === pressed) void this.copy(pressed);
+			return { handled: true, render: false };
+		}
+	}
+
+	private async copy(action: CodeAction): Promise<void> {
+		if (this.copying) return;
+		this.copying = true;
+		try {
+			await this.options.copyCode!(action.code);
+		} catch (error) {
+			this.feedback = undefined;
+			this.options.requestRender?.();
+			this.options.onCopyError?.(error);
+			return;
+		} finally {
+			this.copying = false;
+		}
+		// A resize or invalidation may have replaced this action while copying.
+		if (!this.actions.includes(action)) return;
+		const feedback: { action: CodeAction; status: CopyStatus } = { action, status: "success" };
+		this.feedback = feedback;
+		this.options.requestRender?.();
+		const timer = setTimeout(() => {
+			if (this.feedback !== feedback) return;
+			this.feedback = undefined;
+			this.options.requestRender?.();
+		}, 1800);
+		timer.unref?.();
 	}
 
 	invalidate(): void {

@@ -10,7 +10,20 @@ export interface MathRenderer {
 	readonly key: string;
 }
 
+export interface CodeAction {
+	x: number;
+	y: number;
+	width: number;
+	code: string;
+}
+
+/** Translate code-button geometry along with the block that contains it. */
+export function offsetCodeActions(ctx: RenderContext, x: number, y: number): RenderContext {
+	return { ...ctx, onCode: ctx.onCode ? action => ctx.onCode!({ ...action, x: action.x + x, y: action.y + y }) : undefined };
+}
+
 export interface RenderContext {
+	onCode?: (action: CodeAction) => void;
 	style: Style;
 	math: MathRenderer;
 	/** Available columns for the block being rendered. */

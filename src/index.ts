@@ -9,7 +9,7 @@
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { type ExtensionAPI, type ExtensionContext, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { textFontStatus } from "./math/cjk-font.ts";
 import { createMathRenderer, mathStats, clearFormulaCache } from "./math/formula.ts";
 import { deleteImages, forgetImages, imageMode, installFrameHook } from "./math/kitty.ts";
@@ -24,7 +24,7 @@ import { bumpVersion, type MathMode, setRenderRequester, state } from "./state.t
 import { createStyle, plainStyle, type Style } from "./style.ts";
 
 let ui: ExtensionContext["ui"] | undefined;
-let tui: { requestRender?: () => void; invalidate?: () => void; terminal?: { write(data: string): void } } | undefined;
+let tui: { mode?: string; requestRender?: () => void; invalidate?: () => void; terminal?: { write(data: string): void } } | undefined;
 let uninstallFrameHook: (() => void) | undefined;
 
 function currentStyle(): Style {
@@ -144,7 +144,12 @@ export default function piBetterRender(pi: ExtensionAPI): void {
 		captureTui(ctx);
 		applyPatch((text, paddingX, streaming, transform) => {
 			lastStyle = currentStyle();
-			return new RichMarkdown(text, { style: lastStyle, math, streaming, paddingX, transform });
+			return new RichMarkdown(text, {
+				style: lastStyle, math, streaming, paddingX, transform,
+				copyCode: tui?.mode === "fullscreen" ? copyToClipboard : undefined,
+				onCopyError: (error) => ui?.notify(`Could not copy code: ${error instanceof Error ? error.message : String(error)}`, "error"),
+				requestRender: () => tui?.requestRender?.(),
+			});
 		});
 		refreshAll();
 		void loadMathJax().then((ok) => {

@@ -1,6 +1,7 @@
 import { sliceByColumn } from "@earendil-works/pi-tui";
 import { state } from "../state.ts";
 import type { RenderContext } from "./context.ts";
+import { codeButtonText, codeButtonWidth } from "./code-action.ts";
 import { isMermaid, mermaidPendingNote, renderMermaid } from "./mermaid.ts";
 import { pad, visibleWidth } from "./util.ts";
 
@@ -54,8 +55,15 @@ export function renderCode(token: any, ctx: RenderContext): string[] {
 
 	const lines: string[] = [];
 	const note = isMermaid(lang) ? mermaidPendingNote() : "";
-	const label = lang ? style.fg("muted", note ? `${lang} · ${note}` : lang) : "";
-	lines.push(row(" ".repeat(gutterWidth), pad(label, inner, "right")));
+	let label = lang ? style.fg("muted", note ? `${lang} · ${note}` : lang) : "";
+	// Only show an actionable control when mouse routing is available and the
+	// fence is complete. Reserve enough cells for every feedback state.
+	if (ctx.onCode && fenceClosed(token.raw ?? "") && ctx.width >= width && inner >= codeButtonWidth) {
+		const button = style.fg("accent", codeButtonText("idle"));
+		label = visibleWidth(label) + 2 + codeButtonWidth <= inner ? `${label}  ${button}` : button;
+		ctx.onCode({ x: gutterWidth + inner - codeButtonWidth, y: 0, width: codeButtonWidth, code: token.text ?? "" });
+	}
+	lines.push(row(" ".repeat(gutterWidth), pad(sliceByColumn(label, 0, inner, true), inner, "right")));
 	highlighted.forEach((line, index) => {
 		const pieces = hardWrap(line, inner);
 		pieces.forEach((piece, i) => {
