@@ -46,14 +46,14 @@ function screenLines(tui: TuiAltScreen): string[] {
 	return (tui as unknown as { previousScreen: string[] }).previousScreen;
 }
 
-test("host routes scrolled, resized code-button clicks without stealing editor focus", async t => {
+test("host routes scrolled, resized code-button clicks without stealing editor focus", async (t) => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const terminal = new FakeTerminal();
 	const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true, copyOnSelect: false });
 	const copied: string[] = [];
 	const markdown = new RichMarkdown("> ```sh\n> \techo hello\n> ```", {
 		style: plainStyle(), math: noMath, streaming: false, paddingX: 1,
-		copyCode: async code => { copied.push(code); },
+		copyCode: async (code) => { copied.push(code); },
 		requestRender: () => tui.requestRender(),
 	});
 	const transcript = new Container();
@@ -82,11 +82,11 @@ test("host routes scrolled, resized code-button clicks without stealing editor f
 			tui.renderNow();
 			const screen = screenLines(tui);
 			const label = codeButtonText("idle");
-			const y = screen.findIndex(line => line.includes(label));
+			const y = screen.findIndex((line) => line.includes(label));
 			assert.ok(y >= 0 && y < terminal.rows - 1);
 			const line = screen[y]!;
 			const x = visibleWidth(line.slice(0, line.indexOf(label)));
-			assert.ok(terminal.writes.some(write => write.includes(label)));
+			assert.ok(terminal.writes.some((write) => write.includes(label)));
 			const before = copied.length;
 			terminal.send(`\x1b[<0;${x + 1};${y + 1}M`);
 			assert.equal(copied.length, before);
@@ -96,12 +96,12 @@ test("host routes scrolled, resized code-button clicks without stealing editor f
 			tui.renderNow();
 			assert.equal(copied.length, before + 1, "release + synthesized click must copy only once");
 			assert.equal(copied.at(-1), "\techo hello");
-			assert.ok(screenLines(tui).some(line => line.includes(codeButtonText("success"))));
+			assert.ok(screenLines(tui).some((line) => line.includes(codeButtonText("success"))));
 			assert.equal(tui.getFocusedComponent(), editor);
 			assert.equal(tui.hasActiveSelection(), false);
 			t.mock.timers.tick(1800);
 			tui.renderNow();
-			assert.ok(screenLines(tui).some(line => line.includes(label)));
+			assert.ok(screenLines(tui).some((line) => line.includes(label)));
 		}
 		terminal.send("z");
 		assert.equal(editor.getValue(), "z");

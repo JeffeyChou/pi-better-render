@@ -19,7 +19,7 @@ export interface CodeAction {
 
 /** Translate code-button geometry along with the block that contains it. */
 export function offsetCodeActions(ctx: RenderContext, x: number, y: number): RenderContext {
-	return { ...ctx, onCode: ctx.onCode ? action => ctx.onCode!({ ...action, x: action.x + x, y: action.y + y }) : undefined };
+	return { ...ctx, onCode: ctx.onCode ? (action) => ctx.onCode!({ ...action, x: action.x + x, y: action.y + y }) : undefined };
 }
 
 export interface RenderContext {

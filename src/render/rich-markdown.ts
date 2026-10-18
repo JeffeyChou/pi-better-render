@@ -83,7 +83,7 @@ export function renderMarkdown(markdown: string, width: number, options: Omit<Ri
 		} else {
 			block = cached(`${context}\0${token.type}\0${token.raw}`, () => {
 				const buttons: CodeAction[] = [];
-				const rendered = renderBlock(token, { ...ctx, streaming: phase !== "f", onCode: actions ? action => buttons.push(action) : undefined });
+				const rendered = renderBlock(token, { ...ctx, streaming: phase !== "f", onCode: actions ? (action) => buttons.push(action) : undefined });
 				return { lines: rendered, actions: buttons };
 			});
 			byToken.set(token, { context, block });
@@ -127,7 +127,7 @@ export class RichMarkdown implements Component {
 		const lines = markdown.trim()
 			? renderMarkdown(markdown, contentWidth, this.options, this.options.copyCode ? actions : undefined).map((line) => (line ? prefix + line : line))
 			: [];
-		this.actions = actions.map(action => ({ ...action, x: action.x + padding }));
+		this.actions = actions.map((action) => ({ ...action, x: action.x + padding }));
 		this.pressed = undefined;
 		this.feedback = undefined;
 
@@ -151,7 +151,7 @@ export class RichMarkdown implements Component {
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (!this.options.copyCode || event.button !== "left" || event.shift || event.alt || event.ctrl) return;
-		const hit = this.actions.find(action => event.y === action.y && event.x >= action.x && event.x < action.x + action.width);
+		const hit = this.actions.find((action) => event.y === action.y && event.x >= action.x && event.x < action.x + action.width);
 		if (event.type === "press" && hit) {
 			this.pressed = hit;
 			return { handled: true, capture: true, render: false };
