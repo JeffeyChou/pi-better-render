@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { type ExtensionAPI, type ExtensionContext, copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { textFontStatus } from "./math/cjk-font.ts";
+import { installCopyHook, type SelectionHost } from "./math/copy.ts";
 import { createMathRenderer, mathStats, clearFormulaCache } from "./math/formula.ts";
 import { deleteImages, forgetImages, imageMode, installFrameHook } from "./math/kitty.ts";
 import { loadMathJax, mathjaxBundled, mathjaxError, mathjaxReady } from "./math/mathjax.ts";
@@ -26,6 +27,7 @@ import { createStyle, plainStyle, type Style, styleKey } from "./style.ts";
 let ui: ExtensionContext["ui"] | undefined;
 let tui: { mode?: string; requestRender?: () => void; invalidate?: () => void; terminal?: { write(data: string): void } } | undefined;
 let uninstallFrameHook: (() => void) | undefined;
+let uninstallCopyHook: (() => void) | undefined;
 
 let styleCache: { colors: unknown; key: string; style: Style } | undefined;
 
@@ -91,6 +93,9 @@ function captureTui(ctx: ExtensionContext): void {
 	// Send formula images along with the frames that display them (and again after a full clear).
 	uninstallFrameHook?.();
 	uninstallFrameHook = tui?.terminal && typeof tui.terminal.write === "function" ? installFrameHook(tui.terminal) : undefined;
+	// Fullscreen selections copy formulas as their Markdown instead of placeholder characters.
+	uninstallCopyHook?.();
+	uninstallCopyHook = installCopyHook(tui as SelectionHost | undefined);
 }
 
 /**
@@ -182,6 +187,8 @@ export default function piBetterRender(pi: ExtensionAPI): void {
 		removePatch();
 		uninstallFrameHook?.();
 		uninstallFrameHook = undefined;
+		uninstallCopyHook?.();
+		uninstallCopyHook = undefined;
 		dropCaches(false);
 		setRenderRequester(undefined);
 		tui = undefined;

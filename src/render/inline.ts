@@ -56,7 +56,7 @@ function renderInlineToken(token: any, ctx: RenderContext): string {
 		case "html":
 			return style.fg("muted", token.text ?? token.raw);
 		case "inlineMath": {
-			const image = ctx.math.inline(token.text, token.display, ctx.streaming);
+			const image = ctx.math.inline(token.text, token.display, ctx.streaming, token.raw);
 			if (image) return image;
 			return style.italic(style.fg("mdCode", latexFallback(token.text)));
 		}

@@ -2,10 +2,13 @@ import type { Style } from "../style.ts";
 
 /** Turns formulas into terminal output; returns undefined to request the text fallback. */
 export interface MathRenderer {
-	/** Single-row image placeholder string for an inline formula. */
-	inline(tex: string, display: boolean, streaming: boolean): string | undefined;
+	/**
+	 * Single-row image placeholder string for an inline formula. `source` is
+	 * its Markdown, delimiters included, which a copied selection gets back.
+	 */
+	inline(tex: string, display: boolean, streaming: boolean, source?: string): string | undefined;
 	/** Placeholder rows for a display formula no wider than `maxColumns`. */
-	block(tex: string, maxColumns: number, streaming: boolean): string[] | undefined;
+	block(tex: string, maxColumns: number, streaming: boolean, source?: string): string[] | undefined;
 	/** Part of every cache key: changes when image output would change. */
 	readonly key: string;
 }

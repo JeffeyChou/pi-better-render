@@ -154,7 +154,7 @@ function renderBlockMath(token: any, ctx: RenderContext): string[] {
 		// Still streaming: show the source dimmed until the closing delimiter arrives.
 		return wrap(style.fg("dim", String(token.text)), ctx.width);
 	}
-	const image = ctx.math.block(token.text, ctx.width, ctx.streaming);
+	const image = ctx.math.block(token.text, ctx.width, ctx.streaming, String(token.raw).trim());
 	if (image) {
 		const imageWidth = visibleWidth(image[0] ?? "");
 		const left = Math.max(0, Math.floor((ctx.width - imageWidth) / 2));
