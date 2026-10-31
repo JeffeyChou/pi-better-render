@@ -112,6 +112,27 @@ test("direct mode: placeholder runs become image slices placed at the cursor", (
 	assert.deepEqual(placements(createDirectRewriter()(partial)), [{ x: 10, y: 20, w: 20, h: 20, c: 2 }]);
 });
 
+function placementIds(out: string): number[] {
+	return [...out.matchAll(/\x1b_Ga=p,[^;\x1b]*\bp=(\d+)/g)].map((m) => +m[1]!);
+}
+
+test("direct mode: every slice is a placement of its own (WezTerm drops all others of an image placed without an id)", () => {
+	fresh();
+	registerImage(ID, "QUJD", 3, 2);
+	const [row0, row1] = placeholderRows(ID, 3, 2);
+	const rewrite = createDirectRewriter();
+	// Both rows of a display formula, then the same formula again further down.
+	const first = rewrite(`${row0}\r\n${row1}\r\n\r\n${row0}\r\n${row1}`);
+	const ids = placementIds(first);
+	assert.equal(ids.length, 4);
+	assert.equal(new Set(ids).size, 4, "no slice replaces another");
+	assert.ok(ids.every((p) => p !== 1), "virtual placements (p=1) stay separate");
+	// Redrawing a row places it again under a new id; the cells are erased first, which detaches the old slice.
+	const again = placementIds(rewrite(row0!));
+	assert.equal(again.length, 1);
+	assert.ok(!ids.includes(again[0]!));
+});
+
 test("direct mode: frames split anywhere still cover every cell exactly once", () => {
 	const [row0, row1] = placeholderRows(ID, 3, 2);
 	const frame = `\x1b[1;1H\x1b[2K\x1b[1mx ${row0}\x1b[22m y\r\n${row1}\x1b[0m`;

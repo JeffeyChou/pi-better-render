@@ -16,7 +16,8 @@
  *   no placeholders): the frame hook rewrites each run of placeholder cells
  *   on one row into "erase the cells, place that slice of the image there
  *   without moving the cursor, step over the cells". Every row is placed on
- *   its own, so a partial redraw of one row redraws exactly its slice.
+ *   its own, with a placement id of its own, so a partial redraw of one row
+ *   redraws exactly its slice and leaves the other slices alone.
  *
  * Transmission is frame-driven: `installFrameHook` wraps pi's terminal writer
  * and sends each image the terminal does not have yet right before the frame
@@ -279,6 +280,21 @@ export function prepareFrame(chunk: string, carry = ""): { insertAt: number; tra
 /** Longest output held back while waiting for the end of a split escape sequence. */
 const MAX_PENDING = 1 << 20;
 
+let lastDirectPlacement = PLACEMENT;
+
+/**
+ * Direct mode gives every slice it places a placement id of its own. WezTerm
+ * removes all placements of an image when it is placed again without one, so
+ * the rows of a display formula, or two occurrences of the same `$x$`, would
+ * erase each other until only the last slice placed was left. A redraw still
+ * replaces what was on screen: the cells are erased (ECH) before the slice is
+ * placed, and erasing detaches the old slice.
+ */
+function nextDirectPlacement(): number {
+	lastDirectPlacement = lastDirectPlacement >= 0xffffff ? PLACEMENT + 1 : lastDirectPlacement + 1;
+	return lastDirectPlacement;
+}
+
 /**
  * Direct mode: a streaming rewriter for outgoing frame chunks. Placeholder
  * cells become image slices placed at the cursor; everything else passes
@@ -321,7 +337,7 @@ export function createDirectRewriter(): (chunk: string) => string {
 				// Printing spaces instead would erase the image again in terminals that attach it to cells.
 				out +=
 					`\x1b[${runLength}X` +
-					`\x1b_Ga=p,q=2,i=${runId},C=1,x=${x},y=${y},w=${w},h=${h},c=${runLength},r=1\x1b\\` +
+					`\x1b_Ga=p,q=2,i=${runId},p=${nextDirectPlacement()},C=1,x=${x},y=${y},w=${w},h=${h},c=${runLength},r=1\x1b\\` +
 					`\x1b[${runLength}C`;
 			}
 			runLength = 0;
