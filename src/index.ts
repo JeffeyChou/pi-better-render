@@ -21,15 +21,35 @@ import { depsDir, mermaidEngine } from "./render/mermaid.ts";
 import { cacheStats, clearBlockCache, RichMarkdown } from "./render/rich-markdown.ts";
 import { containsRenderArtifacts, sanitizeMessages } from "./sanitize.ts";
 import { bumpVersion, type MathMode, setRenderRequester, state } from "./state.ts";
-import { createStyle, plainStyle, type Style } from "./style.ts";
+import { createStyle, plainStyle, type Style, styleKey } from "./style.ts";
 
 let ui: ExtensionContext["ui"] | undefined;
 let tui: { mode?: string; requestRender?: () => void; invalidate?: () => void; terminal?: { write(data: string): void } } | undefined;
 let uninstallFrameHook: (() => void) | undefined;
 
+let styleCache: { colors: unknown; key: string; style: Style } | undefined;
+
+/**
+ * The Style for pi's current theme. Components ask for it on every render, so
+ * a theme switch (including pi's `system` theme following the terminal from
+ * light to dark) also recolors messages already on screen.
+ */
 function currentStyle(): Style {
 	const theme = ui?.theme;
 	if (!theme) return plainStyle();
+	// pi 0.99+ hands out a new `colors` object whenever the theme or the terminal's colors change.
+	let colors: unknown;
+	try {
+		colors = theme.colors;
+	} catch {
+		colors = undefined;
+	}
+	if (styleCache && colors !== undefined && colors === styleCache.colors) return styleCache.style;
+	const key = styleKey(theme);
+	if (styleCache?.key === key) {
+		styleCache.colors = colors;
+		return styleCache.style;
+	}
 	let highlight: Style["highlight"] = () => undefined;
 	try {
 		const md = getMarkdownTheme();
@@ -37,11 +57,12 @@ function currentStyle(): Style {
 	} catch {
 		// no highlighting available
 	}
-	return createStyle(theme, highlight);
+	const style = createStyle(theme, highlight, key);
+	styleCache = { colors, key, style };
+	return style;
 }
 
-let lastStyle: Style = plainStyle();
-const math = createMathRenderer(() => lastStyle.mathColor);
+const math = createMathRenderer(() => currentStyle().mathColor);
 
 /** Re-render every message (after a mode switch, theme change or MathJax finishing to load). */
 function refreshAll(): void {
@@ -140,12 +161,11 @@ export default function piBetterRender(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		ui = ctx.ui;
-		lastStyle = currentStyle();
+		styleCache = undefined;
 		captureTui(ctx);
 		applyPatch((text, paddingX, streaming, transform) => {
-			lastStyle = currentStyle();
 			return new RichMarkdown(text, {
-				style: lastStyle, math, streaming, paddingX, transform,
+				style: currentStyle, math, streaming, paddingX, transform,
 				copyCode: tui?.mode === "fullscreen" ? copyToClipboard : undefined,
 				onCopyError: (error) => ui?.notify(`Could not copy code: ${error instanceof Error ? error.message : String(error)}`, "error"),
 				requestRender: () => tui?.requestRender?.(),
@@ -166,6 +186,7 @@ export default function piBetterRender(pi: ExtensionAPI): void {
 		setRenderRequester(undefined);
 		tui = undefined;
 		ui = undefined;
+		styleCache = undefined;
 	});
 
 	// Safety net: the model must only ever see the original Markdown/LaTeX.
