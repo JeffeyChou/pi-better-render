@@ -29,6 +29,12 @@ test("image mode: placeholders in kitty/Ghostty, direct placements elsewhere, ov
 	assert.equal(imageMode({ KITTY_WINDOW_ID: "1" }, true), "placeholder");
 	assert.equal(imageMode({ TERM_PROGRAM: "WezTerm", WEZTERM_PANE: "0" }, true), "direct");
 	assert.equal(imageMode({ TERM_PROGRAM: "WarpTerminal" }, true), "direct");
+	// kitty sets no TERM_PROGRAM; TERM may be overridden for SSH.
+	assert.equal(imageMode({ KITTY_WINDOW_ID: "1", TERM: "xterm-256color" }, true), "placeholder");
+	assert.equal(imageMode({ TERM_PROGRAM: "ghostty", TERM: "xterm-256color" }, true), "placeholder");
+	// Variables inherited from the shell that started this terminal do not count.
+	assert.equal(imageMode({ TERM_PROGRAM: "WezTerm", WEZTERM_PANE: "0", GHOSTTY_RESOURCES_DIR: "/Applications/Ghostty.app/Contents/Resources/ghostty" }, true), "direct");
+	assert.equal(imageMode({ TERM_PROGRAM: "WezTerm", KITTY_WINDOW_ID: "3" }, true), "direct");
 	assert.equal(imageMode({ TERM_PROGRAM: "Apple_Terminal" }, false), "off");
 	assert.equal(imageMode({ TERM_PROGRAM: "WezTerm", TMUX: "/tmp/x" }, true), "off");
 	assert.equal(imageMode({ TERM_PROGRAM: "WezTerm", PI_BETTER_RENDER_PLACEHOLDERS: "1" }, true), "placeholder");

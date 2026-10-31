@@ -75,14 +75,12 @@ export function placeholderTerminal(env: NodeJS.ProcessEnv = process.env): boole
 	if (env.TMUX || env.STY) return false;
 	const program = env.TERM_PROGRAM?.toLowerCase() ?? "";
 	const term = env.TERM?.toLowerCase() ?? "";
-	return Boolean(
-		env.KITTY_WINDOW_ID ||
-			env.GHOSTTY_RESOURCES_DIR ||
-			program === "ghostty" ||
-			program === "kitty" ||
-			term.includes("kitty") ||
-			term.includes("ghostty"),
-	);
+	if (program === "ghostty" || program === "kitty" || term.includes("kitty") || term.includes("ghostty")) return true;
+	// The terminal pi runs in sets TERM_PROGRAM (kitty does not set it). A terminal
+	// started from a Ghostty or kitty shell (`open -a WezTerm`) inherits
+	// GHOSTTY_RESOURCES_DIR or KITTY_WINDOW_ID, so those only count without one.
+	if (program) return false;
+	return Boolean(env.KITTY_WINDOW_ID || env.GHOSTTY_RESOURCES_DIR);
 }
 
 export type ImageMode = "placeholder" | "direct" | "off";
