@@ -1,9 +1,8 @@
 # pi-better-render
 
 Streaming-first rich rendering for [pi](https://pi.dev)'s TUI. Markdown, code blocks, tables and
-LaTeX formulas are rendered as the answer streams in, with formulas shown as real images. It is
-built for Ghostty and kitty, and also shows formula images in other terminals with Kitty graphics,
-such as WezTerm.
+LaTeX formulas are rendered as the answer streams in. Formulas are real images in terminals with the
+Kitty graphics protocol. Ghostty, kitty and WezTerm are tested; Warp is detected but not tested yet.
 
 ![Streaming Markdown, tables, code and formulas in Ghostty](assets/demo.gif)
 
@@ -14,24 +13,27 @@ such as WezTerm.
   waiting for the message to end.
 - **In process, no big runtime.** No browser, Pandoc or daemon is involved. A formula takes about
   1 ms from TeX to PNG.
-- **Text-like images.** Formula images use Kitty Unicode placeholders. Each image is sent once;
-  after that it behaves as ordinary text cells, so it wraps, scrolls and diffs like text. Inline
-  formulas sit inside the line. Formulas stay in the scrollback after pi exits.
+- **Text-like images.** Inline formulas sit inside the line, and every formula wraps, scrolls and
+  diffs like text. Each image is sent to the terminal once and drawn in the theme's text color, on
+  light and dark backgrounds. Formulas stay in the scrollback after pi exits.
+- **Copy as Markdown.** Selecting an answer copies each formula as its LaTeX source, so pasted text
+  is working Markdown again.
 
 ## Compared with other pi extensions
 
 | | **pi-better-render** | [pi-math](https://github.com/Fadouse/pi-math) | [pi-markdown-preview](https://github.com/omaclaren/pi-markdown-preview) | [pi-rich-renderer](https://github.com/dbydd/pi-rich-renderer) |
 |---|---|---|---|---|
 | Where it shows | In the chat, automatically | In the chat, automatically | Separate viewer (`/preview`), browser or PDF | In the chat, automatically |
-| Updates while streaming | ✅ Markdown and formulas, on every delta | ✅ Formulas | ❌ On demand; watch mode refreshes after each completed reply | ❌ Only when the message ends |
+| Updates while streaming | ✅ Markdown and formulas, on every delta | ✅ Formulas | ❌ On demand; the browser's live mode updates per recorded message, not per token | ❌ Only when the message ends |
 | Restyles Markdown (headings, callouts, tables, code) | ✅ | ❌ pi's built-in | ✅ As a Pandoc HTML page | ❌ pi's built-in |
 | Formulas inside the text line | ✅ | ✅ | ✅ Inside a page screenshot | ❌ Each formula becomes a block image |
+| Copying formulas from the chat | ✅ As their LaTeX source (fullscreen mode) | ❌ Not handled | – Separate viewer | ❌ Not handled |
 | Math engine | MathJax 4, with optional TeX fallback | MathJax 3 | Pandoc MathML + MathJax in Chromium | `latex` + `dvipng` per formula |
 | Needs beyond `npm install` | Nothing (TeX is optional) | Nothing | Pandoc and Chromium; LaTeX for PDF | A TeX installation |
 | Stored message and LLM context | Untouched (display only) | Untouched (display only) | Untouched (read only) | Message content replaced at `message_end`; original restored for the LLM |
-| Terminals with images | Ghostty, kitty; WezTerm, Warp via direct placements | Ghostty, kitty; display formulas also in WezTerm, Warp, iTerm2 | Ghostty, kitty, iTerm2, WezTerm | Those supported by pi's image component |
+| Terminals with images | Kitty graphics terminals: Ghostty, kitty, WezTerm, Warp, others by override | Ghostty, kitty; WezTerm, Warp; iTerm2 (display formulas only) | Ghostty, kitty, iTerm2, WezTerm | Those supported by pi's image component |
 | Without images | Unicode approximation | Original LaTeX | – | Original LaTeX |
-| Beyond chat rendering | Mermaid diagrams as Unicode art | Custom macros and environments | Browser and PDF export, Mermaid, file preview, export tool | Disk cache of PNGs |
+| Beyond chat rendering | Mermaid diagrams as Unicode art | Custom macros and environments | Browser and PDF export, live view of tool calls, Mermaid, file preview, export tool | Disk cache of PNGs |
 
 Each existing extension covers one part of the problem:
 
@@ -45,7 +47,7 @@ math alike, in the chat while it streams, in process, with nothing extra to inst
 
 The others are still the better choice in some cases. For PDF or browser output, or for Mermaid
 diagram types beyond flowchart, sequence, state, class and ER, use pi-markdown-preview. For formula images in iTerm2, use pi-math.
-(Comparison as of September 2026.)
+(Comparison as of October 2026.)
 
 ## Install
 
@@ -84,18 +86,23 @@ image placeholder characters.
 
 ## Terminals
 
-Formula images need the Kitty graphics protocol. Everything else renders in any terminal.
+Formula images work in terminals with the Kitty graphics protocol. Everything else renders in any
+terminal, and formulas fall back to a Unicode approximation where images are not available.
 
-| Terminal | Formula images | Tested with pi 1.4.0 on macOS |
+| Terminal | How formulas are drawn | Tested with pi 1.4.0 on macOS |
 |---|---|---|
 | Ghostty | Unicode placeholders | 1.3.1 |
 | kitty | Unicode placeholders | 0.49.2 |
-| WezTerm | One direct placement per row | 20240203 and nightly 20261026 |
-| Warp | One direct placement per row | Not tested |
-| tmux, screen, other terminals | Unicode approximation | – |
+| WezTerm | One direct placement per formula row | 20240203 and nightly 20261026 |
+| Warp | One direct placement per formula row | Not tested |
+| Another terminal with Kitty graphics | Direct placements, after the override below | – |
+| tmux, screen, terminals without Kitty graphics | Unicode approximation | – |
 
-Each terminal was tested with light and dark colors, in fullscreen and regular mode. Formulas stay in
-the scrollback after pi exits.
+Ghostty, kitty and WezTerm were tested with light and dark colors, in fullscreen and regular mode.
+
+pi detects the four terminals above. For another terminal with the Kitty graphics protocol, start pi
+with `PI_IMAGE_PROTOCOL=kitty` (pi's own override), and add `PI_BETTER_RENDER_IMAGES=placeholder`
+if the terminal also supports Unicode placeholders.
 
 ## Commands
 
@@ -151,13 +158,16 @@ packages without a build step; MathJax is pinned exactly, so `vendor/` only chan
 
 ## Changelog
 
-### Unreleased
+### 0.5.0 (2026-10-31)
+
+All in [#6](https://github.com/JeffeyChou/pi-better-render/pull/6).
 
 - Formulas were nearly invisible in light terminals with pi's default `system` theme
   ([#5](https://github.com/JeffeyChou/pi-better-render/issues/5)). They now take the theme's text
   color, and messages already on screen follow theme switches.
 - Selecting text in fullscreen mode copies formulas as their Markdown source instead of placeholder
   characters.
+- Tested in Ghostty, kitty and WezTerm, with a terminal support table in this README.
 - WezTerm showed only the last row of a display formula, and only the last copy of a formula used
   twice. Every row and every copy now shows.
 - A terminal started from a Ghostty or kitty shell (`open -a WezTerm`) was taken for Ghostty or kitty
