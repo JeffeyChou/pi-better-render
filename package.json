@@ -1,7 +1,7 @@
 {
   "name": "pi-better-render",
-  "version": "0.4.0",
-  "description": "Streaming-first rich Markdown, code and math rendering for the pi TUI (display-only; never touches LLM context).",
+  "version": "0.5.0",
+  "description": "Streaming-first rich Markdown, code and math rendering for the pi TUI, with formula images in Kitty graphics terminals (display only; never touches the LLM context).",
   "keywords": [
     "pi-package",
     "pi",
@@ -9,7 +9,9 @@
     "latex",
     "mathjax",
     "kitty",
-    "ghostty"
+    "kitty-graphics",
+    "ghostty",
+    "wezterm"
   ],
   "author": "Jiefeng Zhou",
   "license": "MIT",
