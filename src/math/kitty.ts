@@ -16,7 +16,8 @@
  *   no placeholders): the frame hook rewrites each run of placeholder cells
  *   on one row into "erase the cells, place that slice of the image there
  *   without moving the cursor, step over the cells". Every row is placed on
- *   its own, so a partial redraw of one row redraws exactly its slice.
+ *   its own, with a placement id of its own, so a partial redraw of one row
+ *   redraws exactly its slice and leaves the other slices alone.
  *
  * Transmission is frame-driven: `installFrameHook` wraps pi's terminal writer
  * and sends each image the terminal does not have yet right before the frame
@@ -59,9 +60,15 @@ const DIACRITIC_CODE_POINTS = [
   0x1d188, 0x1d189, 0x1d1aa, 0x1d1ab, 0x1d1ac, 0x1d1ad, 0x1d242, 0x1d243, 0x1d244,
 ] as const;
 
-const PLACEHOLDER = String.fromCodePoint(0x10eeee);
+/** The Kitty Unicode placeholder character (U+10EEEE). */
+export const PLACEHOLDER = String.fromCodePoint(0x10eeee);
 const DIACRITICS = DIACRITIC_CODE_POINTS.map((cp) => String.fromCodePoint(cp));
 const DIACRITIC_INDEX = new Map<number, number>(DIACRITIC_CODE_POINTS.map((cp, i) => [cp, i]));
+
+/** Row/column number a placeholder diacritic encodes, or undefined for any other code point. */
+export function diacriticIndex(codePoint: number): number | undefined {
+	return DIACRITIC_INDEX.get(codePoint);
+}
 export const MAX_PLACEHOLDER_CELLS = DIACRITICS.length;
 const CHUNK = 4096;
 /** Every image we create has this placement id, so re-placing replaces instead of piling up. */
@@ -74,14 +81,12 @@ export function placeholderTerminal(env: NodeJS.ProcessEnv = process.env): boole
 	if (env.TMUX || env.STY) return false;
 	const program = env.TERM_PROGRAM?.toLowerCase() ?? "";
 	const term = env.TERM?.toLowerCase() ?? "";
-	return Boolean(
-		env.KITTY_WINDOW_ID ||
-			env.GHOSTTY_RESOURCES_DIR ||
-			program === "ghostty" ||
-			program === "kitty" ||
-			term.includes("kitty") ||
-			term.includes("ghostty"),
-	);
+	if (program === "ghostty" || program === "kitty" || term.includes("kitty") || term.includes("ghostty")) return true;
+	// The terminal pi runs in sets TERM_PROGRAM (kitty does not set it). A terminal
+	// started from a Ghostty or kitty shell (`open -a WezTerm`) inherits
+	// GHOSTTY_RESOURCES_DIR or KITTY_WINDOW_ID, so those only count without one.
+	if (program) return false;
+	return Boolean(env.KITTY_WINDOW_ID || env.GHOSTTY_RESOURCES_DIR);
 }
 
 export type ImageMode = "placeholder" | "direct" | "off";
@@ -279,6 +284,21 @@ export function prepareFrame(chunk: string, carry = ""): { insertAt: number; tra
 /** Longest output held back while waiting for the end of a split escape sequence. */
 const MAX_PENDING = 1 << 20;
 
+let lastDirectPlacement = PLACEMENT;
+
+/**
+ * Direct mode gives every slice it places a placement id of its own. WezTerm
+ * removes all placements of an image when it is placed again without one, so
+ * the rows of a display formula, or two occurrences of the same `$x$`, would
+ * erase each other until only the last slice placed was left. A redraw still
+ * replaces what was on screen: the cells are erased (ECH) before the slice is
+ * placed, and erasing detaches the old slice.
+ */
+function nextDirectPlacement(): number {
+	lastDirectPlacement = lastDirectPlacement >= 0xffffff ? PLACEMENT + 1 : lastDirectPlacement + 1;
+	return lastDirectPlacement;
+}
+
 /**
  * Direct mode: a streaming rewriter for outgoing frame chunks. Placeholder
  * cells become image slices placed at the cursor; everything else passes
@@ -321,7 +341,7 @@ export function createDirectRewriter(): (chunk: string) => string {
 				// Printing spaces instead would erase the image again in terminals that attach it to cells.
 				out +=
 					`\x1b[${runLength}X` +
-					`\x1b_Ga=p,q=2,i=${runId},C=1,x=${x},y=${y},w=${w},h=${h},c=${runLength},r=1\x1b\\` +
+					`\x1b_Ga=p,q=2,i=${runId},p=${nextDirectPlacement()},C=1,x=${x},y=${y},w=${w},h=${h},c=${runLength},r=1\x1b\\` +
 					`\x1b[${runLength}C`;
 			}
 			runLength = 0;
@@ -410,7 +430,7 @@ function isHighSurrogate(code: number): boolean {
 }
 
 /** End index of the escape sequence starting at `start`, or -1 when it is not complete yet. */
-function escapeEnd(text: string, start: number): number {
+export function escapeEnd(text: string, start: number): number {
 	if (start + 1 >= text.length) return -1;
 	const kind = text[start + 1];
 	if (kind === "[") {
@@ -433,7 +453,7 @@ function escapeEnd(text: string, start: number): number {
 }
 
 /** Foreground image id after an SGR with these parameters. */
-function sgrForeground(params: string, current: number | undefined): number | undefined {
+export function sgrForeground(params: string, current: number | undefined): number | undefined {
 	const parts = params === "" ? ["0"] : params.split(/[;:]/);
 	let fg = current;
 	for (let k = 0; k < parts.length; k++) {

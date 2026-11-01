@@ -29,6 +29,12 @@ test("image mode: placeholders in kitty/Ghostty, direct placements elsewhere, ov
 	assert.equal(imageMode({ KITTY_WINDOW_ID: "1" }, true), "placeholder");
 	assert.equal(imageMode({ TERM_PROGRAM: "WezTerm", WEZTERM_PANE: "0" }, true), "direct");
 	assert.equal(imageMode({ TERM_PROGRAM: "WarpTerminal" }, true), "direct");
+	// kitty sets no TERM_PROGRAM; TERM may be overridden for SSH.
+	assert.equal(imageMode({ KITTY_WINDOW_ID: "1", TERM: "xterm-256color" }, true), "placeholder");
+	assert.equal(imageMode({ TERM_PROGRAM: "ghostty", TERM: "xterm-256color" }, true), "placeholder");
+	// Variables inherited from the shell that started this terminal do not count.
+	assert.equal(imageMode({ TERM_PROGRAM: "WezTerm", WEZTERM_PANE: "0", GHOSTTY_RESOURCES_DIR: "/Applications/Ghostty.app/Contents/Resources/ghostty" }, true), "direct");
+	assert.equal(imageMode({ TERM_PROGRAM: "WezTerm", KITTY_WINDOW_ID: "3" }, true), "direct");
 	assert.equal(imageMode({ TERM_PROGRAM: "Apple_Terminal" }, false), "off");
 	assert.equal(imageMode({ TERM_PROGRAM: "WezTerm", TMUX: "/tmp/x" }, true), "off");
 	assert.equal(imageMode({ TERM_PROGRAM: "WezTerm", PI_BETTER_RENDER_PLACEHOLDERS: "1" }, true), "placeholder");
@@ -110,6 +116,27 @@ test("direct mode: placeholder runs become image slices placed at the cursor", (
 	// A partial row (e.g. a diff starting mid-image) places just that slice.
 	const partial = `\x1b[38;2;17;34;51m${row1!.slice(row1!.indexOf("\u{10EEEE}")).split("\u{10EEEE}").slice(2).map((c) => "\u{10EEEE}" + c).join("")}`;
 	assert.deepEqual(placements(createDirectRewriter()(partial)), [{ x: 10, y: 20, w: 20, h: 20, c: 2 }]);
+});
+
+function placementIds(out: string): number[] {
+	return [...out.matchAll(/\x1b_Ga=p,[^;\x1b]*\bp=(\d+)/g)].map((m) => +m[1]!);
+}
+
+test("direct mode: every slice is a placement of its own (WezTerm drops all others of an image placed without an id)", () => {
+	fresh();
+	registerImage(ID, "QUJD", 3, 2);
+	const [row0, row1] = placeholderRows(ID, 3, 2);
+	const rewrite = createDirectRewriter();
+	// Both rows of a display formula, then the same formula again further down.
+	const first = rewrite(`${row0}\r\n${row1}\r\n\r\n${row0}\r\n${row1}`);
+	const ids = placementIds(first);
+	assert.equal(ids.length, 4);
+	assert.equal(new Set(ids).size, 4, "no slice replaces another");
+	assert.ok(ids.every((p) => p !== 1), "virtual placements (p=1) stay separate");
+	// Redrawing a row places it again under a new id; the cells are erased first, which detaches the old slice.
+	const again = placementIds(rewrite(row0!));
+	assert.equal(again.length, 1);
+	assert.ok(!ids.includes(again[0]!));
 });
 
 test("direct mode: frames split anywhere still cover every cell exactly once", () => {

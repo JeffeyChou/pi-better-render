@@ -47,10 +47,15 @@ export function clearBlockCache(): void {
 	cacheStats.misses = 0;
 }
 
-export interface RichMarkdownOptions {
+export interface RenderOptions {
 	style: Style;
 	math: MathRenderer;
 	streaming: boolean;
+}
+
+export interface RichMarkdownOptions extends Omit<RenderOptions, "style"> {
+	/** A Style, or a function returning the current one on every render (follows theme switches). */
+	style: Style | (() => Style);
 	paddingX: number;
 	transform?: MarkdownTransform;
 	copyCode?: (code: string) => Promise<void>;
@@ -59,7 +64,7 @@ export interface RichMarkdownOptions {
 }
 
 /** Render markdown to terminal lines of at most `width` columns (no padding). */
-export function renderMarkdown(markdown: string, width: number, options: Omit<RichMarkdownOptions, "paddingX" | "transform">, actions?: CodeAction[]): string[] {
+export function renderMarkdown(markdown: string, width: number, options: RenderOptions, actions?: CodeAction[]): string[] {
 	const { style, math, streaming } = options;
 	const tokens = lex(markdown, streaming);
 	const ctx: RenderContext = { style, math, width, streaming, listDepth: 0 };
@@ -110,8 +115,14 @@ export class RichMarkdown implements Component {
 		private readonly options: RichMarkdownOptions,
 	) {}
 
+	private style(): Style {
+		const { style } = this.options;
+		return typeof style === "function" ? style() : style;
+	}
+
 	render(width: number): string[] {
-		const version = `${this.options.style.key}\0${this.options.math.key}\0${state.version}`;
+		const style = this.style();
+		const version = `${style.key}\0${this.options.math.key}\0${state.version}`;
 		if (width === this.cacheWidth && version === this.cacheVersion) return this.withFeedback();
 
 		const padding = Math.max(0, this.options.paddingX);
@@ -125,7 +136,8 @@ export class RichMarkdown implements Component {
 		const prefix = " ".repeat(padding);
 		const actions: CodeAction[] = [];
 		const lines = markdown.trim()
-			? renderMarkdown(markdown, contentWidth, this.options, this.options.copyCode ? actions : undefined).map((line) => (line ? prefix + line : line))
+			? renderMarkdown(markdown, contentWidth, { style, math: this.options.math, streaming: this.options.streaming }, this.options.copyCode ? actions : undefined)
+				.map((line) => (line ? prefix + line : line))
 			: [];
 		this.actions = actions.map((action) => ({ ...action, x: action.x + padding }));
 		this.pressed = undefined;
@@ -144,7 +156,7 @@ export class RichMarkdown implements Component {
 		const line = lines[action.y];
 		if (line === undefined) return lines;
 		lines[action.y] = sliceByColumn(line, 0, action.x, true)
-			+ this.options.style.fg("accent", codeButtonText(status))
+			+ this.style().fg("accent", codeButtonText(status))
 			+ sliceByColumn(line, action.x + action.width, visibleWidth(line), true);
 		return lines;
 	}
