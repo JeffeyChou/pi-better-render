@@ -96,6 +96,7 @@ terminal, and formulas fall back to a Unicode approximation where images are not
 | WezTerm | One direct placement per formula row | 20240203 and nightly 20261026 |
 | Warp | One direct placement per formula row | Not tested |
 | Another terminal with Kitty graphics | Direct placements, after the override below | – |
+| A multiplexer that renders Kitty graphics, such as Herdr | Unicode placeholders, after the overrides below | Not tested |
 | tmux, screen, terminals without Kitty graphics | Unicode approximation | – |
 
 Ghostty, kitty and WezTerm were tested with light and dark colors, in fullscreen and regular mode.
@@ -103,6 +104,18 @@ Ghostty, kitty and WezTerm were tested with light and dark colors, in fullscreen
 pi detects the four terminals above. For another terminal with the Kitty graphics protocol, start pi
 with `PI_IMAGE_PROTOCOL=kitty` (pi's own override), and add `PI_BETTER_RENDER_IMAGES=placeholder`
 if the terminal also supports Unicode placeholders.
+
+Some multiplexers, such as [Herdr](https://github.com/herdrdev/herdr), run their own terminal
+emulator and draw Kitty graphics, Unicode placeholders included, on the outer terminal. pi does not
+detect them, so start pi in the pane with both overrides:
+
+```sh
+PI_IMAGE_PROTOCOL=kitty PI_BETTER_RENDER_IMAGES=placeholder pi
+```
+
+Images then need an outer terminal with Kitty graphics and the multiplexer's image support turned on
+(in Herdr, `terminal.kitty_graphics`, on by default). Otherwise formulas come out blank, so leave the
+overrides unset and keep the Unicode approximation.
 
 ## Commands
 
