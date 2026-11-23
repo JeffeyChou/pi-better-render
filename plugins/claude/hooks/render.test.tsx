@@ -86,6 +86,32 @@ test('without kitty graphics, formulas are readable text and the table is still 
   await ui.unmount()
 })
 
+test("the theme in Claude Code's config file decides the formula color", async ($, on) => {
+  mock.env(on, { TERM_PROGRAM: 'ghostty', HOME: '/home/u' })
+  on('settings.read', () => ({ value: {} }))
+  const read: string[] = []
+  on('fs.read', (_$, e) => {
+    read.push(e.path)
+    if (e.path === '/home/u/.claude.json') return { value: '{"numStartups": 3, "theme": "light-daltonized", "x": 1}' }
+    throw new Error('ENOENT')
+  })
+  on('fs.read', { path: /glyphs/ }, () => {
+    throw new Error('no glyph files in tests')
+  })
+  const ui = await mountReply($, 'Euler: $e^{i\\pi} + 1 = 0$')
+  expect(read).toContain('/home/u/.claude.json')
+  expect(await ui.findAll({ type: 'Image' })).toHaveLength(1)
+  await ui.unmount()
+  // A light theme draws formulas black: /better-render says which color is in use.
+  const status = await $.command.run({
+    command: 'better-render',
+    args: '',
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 80 },
+  })
+  expect(JSON.stringify(status)).toContain('#000000')
+})
+
 test('inside tmux, pictures are off', async ($, on) => {
   mock.env(on, { TERM_PROGRAM: 'tmux', TMUX: '/tmp/tmux-1/default,1,0', TERM: 'xterm-ghostty' })
   answerSettings(on, 'dark')

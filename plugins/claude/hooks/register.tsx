@@ -49,6 +49,30 @@ function terminalHasImages(env: Record<string, string | undefined>): { images: b
   return { images: false, why: `no kitty graphics (${env.TERM_PROGRAM ?? env.TERM ?? 'unknown terminal'})` }
 }
 
+/** Claude Code's `theme`: from settings, else its global config file, where `/theme` stores it. */
+async function readTheme($: EngineInterface): Promise<string | undefined> {
+  try {
+    const theme = await $.settings.read({ key: 'theme' })
+    if (typeof theme === 'string') return theme
+  } catch {
+    // fall through to the config file
+  }
+  const configDir = await $.env.get('CLAUDE_CONFIG_DIR')
+  const home = await $.env.get('HOME')
+  for (const file of [configDir && `${configDir}/.claude.json`, home && `${home}/.claude.json`]) {
+    if (!file) continue
+    try {
+      // The file can be large; the theme sits among the top-level keys, and a 4 MiB read covers it.
+      const text = await $.fs.read(file, { length: 4 * 1024 * 1024 })
+      const match = /"theme"\s*:\s*"([\w-]+)"/.exec(text)
+      if (match) return match[1]
+    } catch {
+      // no such file
+    }
+  }
+  return undefined
+}
+
 async function readSettings($: EngineInterface, options: Record<string, unknown>): Promise<Settings> {
   const mode = (['auto', 'on', 'off'].includes(String(options.images)) ? options.images : 'auto') as Images
   const env = {
@@ -61,16 +85,15 @@ async function readSettings($: EngineInterface, options: Record<string, unknown>
   const detected = terminalHasImages(env)
   const images = mode === 'on' ? true : mode === 'off' ? false : detected.images
   const why = mode === 'auto' ? detected.why : `images: ${mode}`
-  let theme: unknown
-  try {
-    theme = await $.settings.read({ key: 'theme' })
-  } catch {
-    theme = undefined
-  }
+  const theme = await readTheme($)
+  // `auto` follows the terminal; COLORFGBG ("fg;bg", 7 and 9-15 light) is the one hint a mod can read.
+  const bg = (await $.env.get('COLORFGBG'))?.split(';').pop()
+  const appearance =
+    theme === 'auto' && bg && /^\d+$/.test(bg) ? (+bg === 7 || (+bg >= 9 && +bg <= 15) ? 'light' : 'dark') : themeAppearance(theme)
   const color =
     typeof options.formulaColor === 'string' && /^#[0-9a-f]{6}$/i.test(options.formulaColor)
       ? options.formulaColor
-      : MATH_COLORS[themeAppearance(theme)]
+      : MATH_COLORS[appearance]
   const aspect =
     typeof options.cellAspect === 'number' && options.cellAspect >= 1.2 && options.cellAspect <= 4
       ? options.cellAspect
