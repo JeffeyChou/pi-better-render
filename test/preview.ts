@@ -12,14 +12,14 @@
  */
 import { readFileSync } from "node:fs";
 import { setCellDimensions } from "@earendil-works/pi-tui";
-import { createMathRenderer } from "../src/math/formula.ts";
-import { installFrameHook } from "../src/math/kitty.ts";
-import { loadMathJaxSync } from "../src/math/mathjax.ts";
-import { noMath } from "../src/render/context.ts";
-import { loadMermaid } from "../src/render/mermaid.ts";
-import { renderMarkdown } from "../src/render/rich-markdown.ts";
-import { setRenderRequester } from "../src/state.ts";
-import { createStyle, plainStyle, type ThemeLike } from "../src/style.ts";
+import { createMathRenderer } from "../src/pi/formula.ts";
+import { installFrameHook } from "../src/pi/kitty.ts";
+import { loadMathJaxSync } from "../src/core/math/mathjax.ts";
+import { noMath } from "../src/core/render/context.ts";
+import { loadMermaid } from "../src/pi/mermaid.ts";
+import { renderMarkdown } from "../src/pi/rich-markdown.ts";
+import { setRenderRequester } from "../src/core/state.ts";
+import { createStyle, plainStyle, type ThemeLike } from "../src/core/style.ts";
 import { darkTheme } from "./theme.ts";
 
 /** Ask the terminal for its cell size in pixels (CSI 16 t → CSI 6 ; h ; w t), like pi does. */

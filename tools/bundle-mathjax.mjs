@@ -3,7 +3,7 @@
  * rest of the @mathjax packages (other output formats, ESM copies, sources,
  * speech rules, menus).
  *
- *   vendor/mathjax.cjs        src/math/mathjax-lib.cjs and everything it requires, minified
+ *   vendor/mathjax.cjs        src/core/math/mathjax-lib.cjs and everything it requires, minified
  *   vendor/newcm-dynamic/*.cjs on-demand font data, rewritten to use the bundle's font class
  *   vendor/LICENSE            MathJax's Apache-2.0 license
  *
@@ -36,7 +36,7 @@ rmSync(vendor, { recursive: true, force: true });
 mkdirSync(join(vendor, "newcm-dynamic"), { recursive: true });
 
 const result = await build({
-	entryPoints: [join(root, "src/math/mathjax-lib.cjs")],
+	entryPoints: [join(root, "src/core/math/mathjax-lib.cjs")],
 	outfile: join(vendor, "mathjax.cjs"),
 	bundle: true,
 	platform: "node",

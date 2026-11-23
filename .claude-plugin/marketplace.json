@@ -1,0 +1,15 @@
+{
+  "name": "pi-better-render",
+  "owner": { "name": "Jiefeng Zhou", "url": "https://github.com/JeffeyChou" },
+  "metadata": {
+    "description": "Rich Markdown, formula and table rendering for terminal coding agents."
+  },
+  "plugins": [
+    {
+      "name": "better-render",
+      "source": "./plugins/claude",
+      "description": "Formulas as images and aligned CJK tables in Claude Code's replies (display only).",
+      "category": "productivity"
+    }
+  ]
+}

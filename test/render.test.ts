@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { noMath } from "../src/render/context.ts";
-import { lex } from "../src/render/lexer.ts";
-import { cacheStats, clearBlockCache, renderMarkdown } from "../src/render/rich-markdown.ts";
-import { fitColumns } from "../src/render/table.ts";
-import { wrap } from "../src/render/util.ts";
-import { placeholderRows } from "../src/math/kitty.ts";
-import { createStyle, plainStyle } from "../src/style.ts";
+import { noMath } from "../src/core/render/context.ts";
+import { lex } from "../src/core/render/lexer.ts";
+import { cacheStats, clearBlockCache, renderMarkdown } from "../src/pi/rich-markdown.ts";
+import { fitColumns } from "../src/core/render/table.ts";
+import { wrap } from "../src/core/render/util.ts";
+import { placeholderRows } from "../src/pi/kitty.ts";
+import { createStyle, plainStyle } from "../src/core/style.ts";
 import { darkTheme } from "./theme.ts";
 
 const plain = { style: plainStyle(), math: noMath, streaming: false };
@@ -175,7 +175,7 @@ test("an image split by wrapping keeps its columns on both lines", () => {
 });
 
 test("incremental lexing matches a full lex at every streaming step", async () => {
-	const { lexStats, clearLexCache } = await import("../src/render/lexer.ts");
+	const { lexStats, clearLexCache } = await import("../src/core/render/lexer.ts");
 	const docs = [
 		fixture,
 		"para one\n\npara two\n| a | b |\n|---|---|\n| 1 | 2 |\n\nSetext\n===\n\n- a\n\n  continued\n- b\n\n> q\ncontinued\n\n```js\nlet x = 1\n```\n\n$$\nx^2\n$$\n\n    indented\n\n    more\n\n[ref]: http://x\n\nend [ref]",

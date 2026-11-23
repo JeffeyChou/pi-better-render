@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { noMath } from "../src/render/context.ts";
-import { codeButtonText, codeButtonWidth } from "../src/render/code-action.ts";
-import { RichMarkdown } from "../src/render/rich-markdown.ts";
-import { plainStyle } from "../src/style.ts";
+import { noMath } from "../src/core/render/context.ts";
+import { codeButtonText, codeButtonWidth } from "../src/core/render/code-action.ts";
+import { RichMarkdown } from "../src/pi/rich-markdown.ts";
+import { plainStyle } from "../src/core/style.ts";
 
 const base = { style: plainStyle(), math: noMath, streaming: false, paddingX: 1 };
 const event = (type: TuiMouseEvent["type"], x: number, y: number): TuiMouseEvent => ({

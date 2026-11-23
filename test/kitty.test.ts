@@ -11,7 +11,7 @@ import {
 	prepareFrame,
 	registerImage,
 	setKittyWriter,
-} from "../src/math/kitty.ts";
+} from "../src/pi/kitty.ts";
 
 setKittyWriter(undefined);
 setCellDimensions({ widthPx: 10, heightPx: 20 });

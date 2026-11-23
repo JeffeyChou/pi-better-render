@@ -4,6 +4,9 @@ Streaming-first rich rendering for [pi](https://pi.dev)'s TUI. Markdown, code bl
 LaTeX formulas are rendered as the answer streams in. Formulas are real images in terminals with the
 Kitty graphics protocol. Ghostty, kitty and WezTerm are tested; Warp is detected but not tested yet.
 
+The same renderer also runs in [Claude Code](#claude-code), as a plugin: formulas as images and
+aligned CJK tables in its replies, in the `claude` you already start.
+
 ![Streaming Markdown, tables, code and formulas in Ghostty](assets/demo.gif)
 
 - **Display only.** It replaces the component that displays a message and never edits the message.
@@ -57,7 +60,16 @@ pi install git:github.com/JeffeyChou/pi-better-render
 pi -e npm:pi-better-render                            # try it for one run without installing
 ```
 
-From a local checkout: `npm install`, then `pi install ./path/to/pi-better-render` (or `pi -e ./src/index.ts`).
+From a local checkout: `npm install`, then `pi install ./path/to/pi-better-render` (or `pi -e ./src/pi/index.ts`).
+
+For Claude Code, see [Claude Code](#claude-code). The optional
+[`better-render`](packages/better-render) command installs into either host with that host's own
+installer and reports what is set up:
+
+```sh
+npx better-render install --target pi        # or --target claude
+npx better-render doctor
+```
 
 ## What it renders
 
@@ -128,6 +140,35 @@ Environment variables:
 | `PI_BETTER_RENDER_DEPS_DIR`, `PI_BETTER_RENDER_FONTS_DIR` | Where downloads go |
 | `PI_BETTER_RENDER_DEBUG=1` | Log context-sanitizer checks to `~/.pi/agent/better-render-debug.log` |
 
+## Claude Code
+
+The `better-render` plugin draws Claude Code replies that contain formulas or tables with the same
+renderer. Install it from this repository's marketplace, at the Claude Code prompt:
+
+```
+/plugin install better-render --marketplace JeffeyChou/pi-better-render
+```
+
+or from a shell: `claude plugin marketplace add JeffeyChou/pi-better-render`, then
+`claude plugin install better-render@pi-better-render` (or `npx better-render install --target claude`).
+Claude Code 2.1.330 or later; start a new session, or run `/reload-plugins`, after installing.
+
+- **Display only.** The plugin answers Claude Code's `AssistantMessage` render hook, which changes
+  the drawing alone: the stored reply, the transcript and the model's context keep the original
+  Markdown.
+- **Only where it helps.** Text blocks with math or tables are drawn by the shared renderer; the
+  other blocks of the reply, and replies without math or tables, stay with Claude Code's own
+  Markdown (code highlighting, links).
+- **After each text block.** Claude Code hands the plugin finished text blocks, so formulas appear
+  when a block is complete rather than while it streams.
+- **Formula images in Ghostty and kitty**, through Claude Code's own image support. Elsewhere, and
+  inside tmux, formulas are a readable Unicode approximation and tables stay aligned. Formulas with
+  CJK in `\text{…}` also stay text, since the plugin has no text fonts.
+
+`/better-render` shows how the plugin draws in the current terminal. Options, in `/plugin` →
+better-render → configure: `images` (`auto`, `on`, `off`), `cellAspect` (your font's cell height
+divided by its width, 2.1 by default) and `formulaColor` (white or black by Claude's theme unless set).
+
 ## How it works
 
 The extension swaps pi's Markdown component for its own and never edits the message, so the session
@@ -135,6 +176,15 @@ file and the next LLM request keep the original Markdown and LaTeX. Each delta i
 with `marked`, and finished blocks come from a cache. Formulas are typeset in process by MathJax 4
 (TeX → SVG), rasterized by resvg onto whole terminal cells, and sent once over the Kitty graphics
 protocol, so they wrap and scroll like text.
+
+The rendering is shared between hosts; each host has a thin adapter that receives replies and draws:
+
+| Path | What it is | Ships in |
+|---|---|---|
+| `src/core` | Markdown lexer, block, inline and CJK table layout, MathJax (TeX → SVG → PNG with the host's rasterizer), render caches. No Node, no host API. | both |
+| `src/pi` | pi extension: the Markdown component patch, Kitty placeholders, formula copying, fonts, TeX fallback, Mermaid, resvg-js | the npm package |
+| `src/claude` + `plugins/claude` | Claude Code plugin: the render hook, theme-key styles, formula pictures as `Image` elements; MathJax and resvg-wasm bundled into `plugins/claude/lib` | the marketplace |
+| `packages/better-render` | the optional installer and `doctor` | its own npm package |
 
 ## Performance
 
@@ -145,18 +195,34 @@ over a 61k-character answer. `npm run bench` reproduces the streaming numbers.
 ## Development
 
 ```sh
-npm test                                                  # unit tests (rebuilds vendor/ first)
+npm test                                                  # unit tests (rebuilds vendor/ and plugins/claude/lib first)
 npm run typecheck
+npm run test:claude                                       # the Claude Code plugin in Claude Code's sandbox (needs `claude`)
+npm run test:installer
+npm run check:pack                                        # what each npm package would publish
+node tools/verify-pi-tarball.mjs                          # the pi tarball, installed clean, renders
+node tools/verify-claude-install.mjs                      # the plugin, installed from the marketplace into an empty config
 npm run bench                                             # streaming cost per delta
 npm run preview -- test/fixtures/perceptron.md [--live]   # render a file in this terminal
 ```
 
 `npm run build` bundles the MathJax parts in use into `vendor/` (about 12 MB, mostly on-demand font
-data), so an install is about 15 MB instead of 118 MB. `vendor/` is committed because pi installs git
-packages without a build step; MathJax is pinned exactly, so `vendor/` only changes with the pins.
-`npm publish` runs the typecheck and tests first.
+data), so an install is about 15 MB instead of 118 MB, and builds `plugins/claude/lib/` for Claude
+Code: ES module chunks under its 1 MiB-per-file and 8 MiB limits, `resvg.wasm`, and MathJax's glyph
+data as JSON. Both are committed because pi installs git packages and Claude Code installs plugins
+without a build step; the inputs are pinned exactly, so the output only changes with the pins or the
+sources, and CI checks that it matches. `npm publish` runs the typecheck and tests first.
 
 ## Changelog
+
+### Unreleased
+
+- Claude Code plugin (`plugins/claude`), installed from this repository's marketplace: formulas as
+  images in Ghostty and kitty and aligned CJK tables in Claude Code replies, display only.
+- The renderer is split into a host-neutral core (`src/core`) and the pi adapter (`src/pi`). pi's
+  rendering is unchanged; the extension entry moved to `src/pi/index.ts`.
+- `better-render install --target pi|claude` and `better-render doctor`
+  ([`packages/better-render`](packages/better-render)).
 
 ### 0.5.0 (2026-10-31)
 
@@ -201,7 +267,9 @@ All in [#6](https://github.com/JeffeyChou/pi-better-render/pull/6).
 
 ## Credits
 
-[MathJax](https://www.mathjax.org) (Apache-2.0) is bundled in `vendor/`; see `vendor/LICENSE`.
+[MathJax](https://www.mathjax.org) (Apache-2.0) is bundled in `vendor/`; see `vendor/LICENSE`. The
+Claude Code plugin also bundles [resvg-wasm](https://github.com/thx/resvg-js) (MPL-2.0); see
+`plugins/claude/lib/LICENSES.md`.
 
 The Kitty diacritic table and the formula-scaling approach are adapted from
 [Fadouse/pi-math](https://github.com/Fadouse/pi-math) (MIT).

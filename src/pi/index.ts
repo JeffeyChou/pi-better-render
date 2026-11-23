@@ -1,0 +1,243 @@
+/**
+ * pi-better-render — streaming-first rich Markdown, code and math for pi's TUI.
+ *
+ * Display-only by construction: assistant messages are rendered by swapping
+ * pi's Markdown component (see patch.ts); message content, the session file
+ * and the LLM context always keep the original Markdown/LaTeX. A `context`
+ * hook additionally strips any terminal image artifacts before each request.
+ */
+import { appendFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { type ExtensionAPI, type ExtensionContext, copyToClipboard, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { textFontStatus } from "./cjk-font.ts";
+import { installCopyHook, type SelectionHost } from "./copy.ts";
+import { createMathRenderer, mathStats, clearFormulaCache } from "./formula.ts";
+import { deleteImages, forgetImages, imageMode, installFrameHook } from "./kitty.ts";
+import { loadMathJax, mathjaxBundled, mathjaxError, mathjaxReady } from "../core/math/mathjax.ts";
+import { detectTexBackend } from "./tex-backend.ts";
+import { applyPatch, removePatch } from "./patch.ts";
+import { clearLexCache } from "../core/render/lexer.ts";
+import { depsDir, mermaidEngine } from "./mermaid.ts";
+import { cacheStats, clearBlockCache, RichMarkdown } from "./rich-markdown.ts";
+import { containsRenderArtifacts, sanitizeMessages } from "./sanitize.ts";
+import { bumpVersion, type MathMode, setRenderRequester, state } from "../core/state.ts";
+import { createStyle, plainStyle, type Style, styleKey } from "../core/style.ts";
+
+let ui: ExtensionContext["ui"] | undefined;
+let tui: { mode?: string; requestRender?: () => void; invalidate?: () => void; terminal?: { write(data: string): void } } | undefined;
+let uninstallFrameHook: (() => void) | undefined;
+let uninstallCopyHook: (() => void) | undefined;
+
+let styleCache: { colors: unknown; key: string; style: Style } | undefined;
+
+/**
+ * The Style for pi's current theme. Components ask for it on every render, so
+ * a theme switch (including pi's `system` theme following the terminal from
+ * light to dark) also recolors messages already on screen.
+ */
+function currentStyle(): Style {
+	const theme = ui?.theme;
+	if (!theme) return plainStyle();
+	// pi 0.99+ hands out a new `colors` object whenever the theme or the terminal's colors change.
+	let colors: unknown;
+	try {
+		colors = theme.colors;
+	} catch {
+		colors = undefined;
+	}
+	if (styleCache && colors !== undefined && colors === styleCache.colors) return styleCache.style;
+	const key = styleKey(theme);
+	if (styleCache?.key === key) {
+		styleCache.colors = colors;
+		return styleCache.style;
+	}
+	let highlight: Style["highlight"] = () => undefined;
+	try {
+		const md = getMarkdownTheme();
+		if (md.highlightCode) highlight = (code, lang) => md.highlightCode!(code, lang);
+	} catch {
+		// no highlighting available
+	}
+	const style = createStyle(theme, highlight, key);
+	styleCache = { colors, key, style };
+	return style;
+}
+
+const math = createMathRenderer(() => currentStyle().mathColor);
+
+/** Re-render every message (after a mode switch, theme change or MathJax finishing to load). */
+function refreshAll(): void {
+	bumpVersion();
+	try {
+		tui?.invalidate?.();
+		tui?.requestRender?.();
+	} catch {
+		// TUI gone (shutdown)
+	}
+}
+
+/** Grab pi's TUI instance through a widget factory, then remove the widget again. */
+function captureTui(ctx: ExtensionContext): void {
+	const key = "pi-better-render:probe";
+	try {
+		ctx.ui.setWidget(key, (instance) => {
+			tui = instance;
+			return { render: () => [], invalidate() {} };
+		});
+		ctx.ui.setWidget(key, undefined);
+	} catch {
+		tui = undefined;
+	}
+	setRenderRequester(() => tui?.requestRender?.());
+	// Send formula images along with the frames that display them (and again after a full clear).
+	uninstallFrameHook?.();
+	uninstallFrameHook = tui?.terminal && typeof tui.terminal.write === "function" ? installFrameHook(tui.terminal) : undefined;
+	// Fullscreen selections copy formulas as their Markdown instead of placeholder characters.
+	uninstallCopyHook?.();
+	uninstallCopyHook = installCopyHook(tui as SelectionHost | undefined);
+}
+
+/**
+ * Forget everything rendered: the next frames re-rasterize and re-send what is
+ * visible. Terminal images are freed only on an explicit clear-cache; at
+ * session end they stay, so the formulas left in the scrollback keep showing.
+ */
+function dropCaches(freeTerminalImages: boolean): void {
+	clearBlockCache();
+	clearLexCache();
+	clearFormulaCache();
+	if (freeTerminalImages) deleteImages();
+	else forgetImages();
+}
+
+function debugLog(line: string): void {
+	if (!state.debug) return;
+	try {
+		appendFileSync(join(homedir(), ".pi", "agent", "better-render-debug.log"), `[${new Date().toISOString()}] ${line}\n`);
+	} catch {
+		// ignore
+	}
+}
+
+function statusText(): string {
+	const tex = detectTexBackend();
+	const lookups = cacheStats.hits + cacheStats.misses;
+	const avg = mathStats.rendered > 0 ? (mathStats.totalMs / mathStats.rendered).toFixed(1) : "–";
+	return [
+		`rich markdown: ${state.enabled ? "on" : "off"}   math: ${state.math}   line numbers: ${state.lineNumbers ? "on" : "off"}   mermaid: ${state.mermaid ? "on" : "off"}`,
+		`math engine: ${mathjaxReady() ? `MathJax${mathjaxBundled() ? " (bundled)" : ""} + resvg` : mathjaxError() ? `unavailable (${mathjaxError()})` : "loading…"}`,
+		`TeX fallback: ${tex ? tex.name : "none"}   images: ${imageStatus()}`,
+		`text fonts: ${textFontStatus()}`,
+		`mermaid renderer: ${mermaidStatus()}`,
+		`formulas: ${mathStats.rendered} rendered (avg ${avg} ms), ${mathStats.texRendered} via TeX, ${mathStats.failed} failed`,
+		`block cache: ${lookups ? Math.round((cacheStats.hits / lookups) * 100) : 0}% hits of ${lookups}`,
+	].join("\n");
+}
+
+function imageStatus(): string {
+	const mode = imageMode();
+	if (mode === "placeholder") return "kitty placeholders";
+	if (mode === "direct") return "kitty direct placements";
+	return "unavailable (Unicode fallback)";
+}
+
+function mermaidStatus(): string {
+	const { state: engine, error } = mermaidEngine();
+	if (engine === "idle") return "not loaded (downloads on the first diagram)";
+	if (engine === "installing") return `downloading to ${depsDir()}…`;
+	if (engine === "unavailable") return `unavailable (${error})`;
+	return engine;
+}
+
+const COMMANDS = [
+	{ value: "status", label: "status", description: "Show renderer status" },
+	{ value: "on", label: "on", description: "Use rich rendering for assistant messages" },
+	{ value: "off", label: "off", description: "Restore pi's built-in Markdown rendering" },
+	{ value: "math:streaming", label: "math:streaming", description: "Render formulas as images while streaming" },
+	{ value: "math:final", label: "math:final", description: "Render formulas as images after the message ends" },
+	{ value: "math:off", label: "math:off", description: "Never render formulas as images" },
+	{ value: "lines", label: "lines", description: "Toggle code block line numbers" },
+	{ value: "mermaid", label: "mermaid", description: "Toggle drawing mermaid blocks as diagrams" },
+	{ value: "clear-cache", label: "clear-cache", description: "Drop cached renders and terminal images" },
+];
+
+export default function piBetterRender(pi: ExtensionAPI): void {
+	pi.on("session_start", (_event, ctx) => {
+		if (!ctx.hasUI) return;
+		ui = ctx.ui;
+		styleCache = undefined;
+		captureTui(ctx);
+		applyPatch((text, paddingX, streaming, transform) => {
+			return new RichMarkdown(text, {
+				style: currentStyle, math, streaming, paddingX, transform,
+				copyCode: tui?.mode === "fullscreen" ? copyToClipboard : undefined,
+				onCopyError: (error) => ui?.notify(`Could not copy code: ${error instanceof Error ? error.message : String(error)}`, "error"),
+				requestRender: () => tui?.requestRender?.(),
+			});
+		});
+		refreshAll();
+		void loadMathJax().then((ok) => {
+			debugLog(ok ? "MathJax loaded" : `MathJax unavailable: ${mathjaxError()}`);
+			if (ok) refreshAll();
+		});
+	});
+
+	pi.on("session_shutdown", () => {
+		removePatch();
+		uninstallFrameHook?.();
+		uninstallFrameHook = undefined;
+		uninstallCopyHook?.();
+		uninstallCopyHook = undefined;
+		dropCaches(false);
+		setRenderRequester(undefined);
+		tui = undefined;
+		ui = undefined;
+		styleCache = undefined;
+	});
+
+	// Safety net: the model must only ever see the original Markdown/LaTeX.
+	pi.on("context", (event) => {
+		const messages = event?.messages;
+		if (!Array.isArray(messages)) return undefined;
+		const result = sanitizeMessages(messages);
+		if (state.debug) {
+			const dirty = messages.filter((m: any) => containsRenderArtifacts(JSON.stringify(m.content ?? ""))).length;
+			debugLog(`context: ${messages.length} messages, ${dirty} with render artifacts, ${result?.cleaned ?? 0} cleaned`);
+		}
+		return result ? { messages: result.messages } : undefined;
+	});
+
+	pi.registerCommand("better-render", {
+		description: "Rich Markdown / math rendering: status | on | off | math:streaming|final|off | lines | mermaid | clear-cache",
+		getArgumentCompletions: (prefix) => COMMANDS.filter((c) => c.value.startsWith(prefix.trim())),
+		handler: async (args, ctx) => {
+			const arg = args.trim().toLowerCase();
+			if (arg === "" || arg === "status") {
+				ctx.ui.notify(statusText(), "info");
+				return;
+			}
+			if (arg === "on" || arg === "off") {
+				state.enabled = arg === "on";
+			} else if (arg.startsWith("math:")) {
+				const mode = arg.slice(5) as MathMode;
+				if (!["streaming", "final", "off"].includes(mode)) {
+					ctx.ui.notify(`Unknown math mode "${mode}"`, "error");
+					return;
+				}
+				state.math = mode;
+			} else if (arg === "lines") {
+				state.lineNumbers = !state.lineNumbers;
+			} else if (arg === "mermaid") {
+				state.mermaid = !state.mermaid;
+			} else if (arg === "clear-cache") {
+				dropCaches(true);
+			} else {
+				ctx.ui.notify(`Unknown argument "${arg}". Try: ${COMMANDS.map((c) => c.value).join(", ")}`, "error");
+				return;
+			}
+			refreshAll();
+			ctx.ui.notify(statusText(), "info");
+		},
+	});
+}

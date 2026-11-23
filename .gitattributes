@@ -1,0 +1,4 @@
+vendor/** linguist-generated=true
+plugins/claude/lib/** linguist-generated=true
+plugins/claude/lib/**/*.json -diff
+plugins/claude/lib/*.mjs -diff
