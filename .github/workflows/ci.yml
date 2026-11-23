@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core-and-pi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # pretest rebuilds vendor/ and plugins/claude/lib/ first
+      - run: npm test
+      - name: Generated files match their sources
+        run: git diff --exit-code -- vendor plugins/claude/lib
+      - name: Package contents (npm pack --dry-run --json)
+        run: npm run check:pack
+      - name: pi tarball runs from a clean install
+        run: node tools/verify-pi-tarball.mjs
+      - run: npm run test:installer
+
+  claude-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The plugin API is early access: pin the version the plugin is verified with.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.330
+      - name: Validate the marketplace and the plugin
+        run: claude plugin validate .
+      - name: Plugin tests in Claude Code's sandbox
+        run: claude plugin test plugins/claude
+      - name: Install from the marketplace into an empty configuration
+        run: node tools/verify-claude-install.mjs
