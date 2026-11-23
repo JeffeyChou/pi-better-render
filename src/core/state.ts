@@ -12,7 +12,7 @@ export const state = {
 	/** Show line numbers in code blocks. */
 	lineNumbers: false,
 	/** Append context-sanitizer diagnostics to ~/.pi/agent/better-render-debug.log. */
-	debug: process.env.PI_BETTER_RENDER_DEBUG === "1",
+	debug: typeof process !== "undefined" && process.env?.PI_BETTER_RENDER_DEBUG === "1",
 	/** Bumped whenever something that affects rendered output changes (mode, theme, math engine loaded). */
 	version: 0,
 };

@@ -5,13 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, type TestContext, test } from "node:test";
 import { setCapabilities, setCellDimensions } from "@earendil-works/pi-tui";
-import { configureTextFonts, FontPendingError, scriptsIn, textFontOptions, textFontStatus } from "../src/math/cjk-font.ts";
-import { createMathRenderer } from "../src/math/formula.ts";
-import { setKittyWriter } from "../src/math/kitty.ts";
-import { loadMathJaxSync } from "../src/math/mathjax.ts";
-import { renderMarkdown } from "../src/render/rich-markdown.ts";
-import { setRenderRequester, state } from "../src/state.ts";
-import { plainStyle } from "../src/style.ts";
+import { configureTextFonts, FontPendingError, scriptsIn, textFontOptions, textFontStatus } from "../src/pi/cjk-font.ts";
+import { createMathRenderer } from "../src/pi/formula.ts";
+import { setKittyWriter } from "../src/pi/kitty.ts";
+import { loadMathJaxSync } from "../src/core/math/mathjax.ts";
+import { renderMarkdown } from "../src/pi/rich-markdown.ts";
+import { setRenderRequester, state } from "../src/core/state.ts";
+import { plainStyle } from "../src/core/style.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "better-render-fonts-"));
 after(() => {

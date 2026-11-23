@@ -1,8 +1,7 @@
-import { sliceByColumn } from "@earendil-works/pi-tui";
 import { state } from "../state.ts";
+import { sliceByColumn } from "../text.ts";
 import type { RenderContext } from "./context.ts";
 import { codeButtonText, codeButtonWidth } from "./code-action.ts";
-import { isMermaid, mermaidPendingNote, renderMermaid } from "./mermaid.ts";
 import { pad, visibleWidth } from "./util.ts";
 
 const BG_RESET = "\x1b[49m";
@@ -39,8 +38,8 @@ export function renderCode(token: any, ctx: RenderContext): string[] {
 	const { style } = ctx;
 	const lang: string = (token.lang ?? "").trim().split(/\s+/)[0] ?? "";
 	const source: string = (token.text ?? "").replace(/\t/g, "    ");
-	if (isMermaid(lang) && (!ctx.streaming || fenceClosed(token.raw ?? ""))) {
-		const diagram = renderMermaid(source, ctx);
+	if (ctx.diagram && (!ctx.streaming || fenceClosed(token.raw ?? ""))) {
+		const diagram = ctx.diagram.render(lang, source, ctx);
 		if (diagram) return diagram;
 	}
 	const highlighted = style.highlight(source, lang || undefined) ?? source.split("\n").map((l) => style.fg("mdCodeBlock", l));
@@ -54,7 +53,7 @@ export function renderCode(token: any, ctx: RenderContext): string[] {
 		bg ? bg + withBackground(gutter + pad(content, inner) + " ", bg) + BG_RESET : (gutter + content).replace(/\s+$/, "");
 
 	const lines: string[] = [];
-	const note = isMermaid(lang) ? mermaidPendingNote() : "";
+	const note = ctx.diagram?.note(lang) ?? "";
 	let label = lang ? style.fg("muted", note ? `${lang} · ${note}` : lang) : "";
 	// Only show an actionable control when mouse routing is available and the
 	// fence is complete. Reserve enough cells for every feedback state.

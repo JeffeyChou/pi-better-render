@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setCapabilities, setCellDimensions, stripTerminalSequences } from "@earendil-works/pi-tui";
-import { installCopyHook, rememberFormulaSource, selectionWithFormulas, type SelectionHost } from "../src/math/copy.ts";
-import { createMathRenderer } from "../src/math/formula.ts";
-import { placeholderRows, setKittyWriter } from "../src/math/kitty.ts";
-import { loadMathJaxSync } from "../src/math/mathjax.ts";
-import { renderMarkdown } from "../src/render/rich-markdown.ts";
-import { plainStyle } from "../src/style.ts";
+import { installCopyHook, rememberFormulaSource, selectionWithFormulas, type SelectionHost } from "../src/pi/copy.ts";
+import { createMathRenderer } from "../src/pi/formula.ts";
+import { placeholderRows, setKittyWriter } from "../src/pi/kitty.ts";
+import { loadMathJaxSync } from "../src/core/math/mathjax.ts";
+import { renderMarkdown } from "../src/pi/rich-markdown.ts";
+import { plainStyle } from "../src/core/style.ts";
 
 const DISPLAY = 0x300001;
 const INLINE = 0x300002;

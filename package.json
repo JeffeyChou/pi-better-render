@@ -24,16 +24,17 @@
     "url": "https://github.com/JeffeyChou/pi-better-render/issues"
   },
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./src/pi/index.ts",
   "files": [
-    "src",
+    "src/core",
+    "src/pi",
     "vendor",
     "README.md",
     "LICENSE"
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./src/pi/index.ts"
     ],
     "video": "https://cdn.jsdelivr.net/gh/JeffeyChou/pi-better-render@main/assets/demo.mp4",
     "image": "https://cdn.jsdelivr.net/gh/JeffeyChou/pi-better-render@main/assets/demo.gif"

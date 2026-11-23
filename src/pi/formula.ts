@@ -7,12 +7,14 @@
  * engine in the background when one is installed.
  */
 import { getCellDimensions, getPngDimensions } from "@earendil-works/pi-tui";
-import type { MathRenderer } from "../render/context.ts";
-import { bumpVersion, requestRender, state } from "../state.ts";
+import { toBase64 } from "../core/base64.ts";
+import type { MathRenderer } from "../core/render/context.ts";
+import { bumpVersion, requestRender, state } from "../core/state.ts";
 import { allocateId, imageMode, MAX_PLACEHOLDER_CELLS, registerImage, placeholderRows } from "./kitty.ts";
 import { FontPendingError } from "./cjk-font.ts";
 import { rememberFormulaSource } from "./copy.ts";
-import { centeredCanvas, MathError, mathjaxReady, type Raster, rasterize, rasterizeSvg } from "./mathjax.ts";
+import { centeredCanvas, MathError, mathjaxReady, type Raster, rasterize, rasterizeSvg } from "../core/math/mathjax.ts";
+import "./math-backend.ts";
 import { detectTexBackend } from "./tex-backend.ts";
 
 interface Placed extends Raster {
@@ -96,7 +98,7 @@ function placeTexResult(result: { png: string; width: number; height: number }, 
 	const scale = 2;
 	const inner = `<svg width="${w * scale}" height="${h * scale}"><image width="${w * scale}" height="${h * scale}" href="data:image/png;base64,${result.png}"/></svg>`;
 	const png = rasterizeSvg(centeredCanvas(inner, w * scale, h * scale, columns * cellW * scale, rows * cellH * scale, "#000000"));
-	return { base64: png.toString("base64"), columns, rows };
+	return { base64: toBase64(png), columns, rows };
 }
 
 /**

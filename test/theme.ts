@@ -1,4 +1,4 @@
-import type { ThemeLike } from "../src/style.ts";
+import type { ThemeLike } from "../src/core/style.ts";
 
 /** pi's built-in dark theme colors, for rendering outside pi. */
 const FG: Record<string, string> = {

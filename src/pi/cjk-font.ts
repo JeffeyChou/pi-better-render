@@ -18,7 +18,7 @@ import { existsSync, statSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
-import { bumpVersion, requestRender } from "../state.ts";
+import { bumpVersion, requestRender } from "../core/state.ts";
 
 export type Script = "han" | "hangul";
 

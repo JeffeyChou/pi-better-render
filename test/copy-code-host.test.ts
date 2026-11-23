@@ -4,10 +4,10 @@ import {
 	Container, Input, ScrollView, Spacer, Text, TuiAltScreen, VStack,
 	visibleWidth, type Terminal,
 } from "@earendil-works/pi-tui";
-import { codeButtonText } from "../src/render/code-action.ts";
-import { noMath } from "../src/render/context.ts";
-import { RichMarkdown } from "../src/render/rich-markdown.ts";
-import { plainStyle } from "../src/style.ts";
+import { codeButtonText } from "../src/core/render/code-action.ts";
+import { noMath } from "../src/core/render/context.ts";
+import { RichMarkdown } from "../src/pi/rich-markdown.ts";
+import { plainStyle } from "../src/core/style.ts";
 
 class FakeTerminal implements Terminal {
 	columns = 60;

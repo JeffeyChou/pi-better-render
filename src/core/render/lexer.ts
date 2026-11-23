@@ -9,7 +9,7 @@
  * `blockMath` token with `closed: false` so it can be shown as dimmed source
  * instead of flickering through paragraph/escape rendering.
  */
-import { Marked, type Token } from "@earendil-works/pi-tui";
+import { Marked, type Token } from "../text.ts";
 
 export interface BlockMathToken {
 	type: "blockMath";

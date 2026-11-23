@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { noMath } from "../src/render/context.ts";
-import { RichMarkdown } from "../src/render/rich-markdown.ts";
-import { colorToHex, createStyle, FALLBACK_MATH_COLOR, guessAppearance, mathColorOf, sgrToHex, styleKey, type ColorLike, type ThemeLike } from "../src/style.ts";
+import { noMath } from "../src/core/render/context.ts";
+import { RichMarkdown } from "../src/pi/rich-markdown.ts";
+import { colorToHex, createStyle, FALLBACK_MATH_COLOR, guessAppearance, mathColorOf, sgrToHex, styleKey, type ColorLike, type ThemeLike } from "../src/core/style.ts";
 
 /**
  * A theme shaped like pi 0.99+'s: `fgSgr` gives each token's escape sequence

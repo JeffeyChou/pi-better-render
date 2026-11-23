@@ -1,19 +1,36 @@
 /**
- * TeX → SVG (MathJax 4, in process) → PNG (resvg, in process).
+ * TeX → SVG (MathJax 4, in process) → PNG (the host's SVG rasterizer).
+ *
+ * Host-neutral: the host installs a MathBackend first, which says where the
+ * MathJax library comes from and how an SVG becomes PNG bytes. pi uses the
+ * vendored CommonJS bundle and resvg-js (src/pi/math-backend.ts); the Claude
+ * Code plugin uses an ESM bundle and resvg-wasm (plugins/claude).
  *
  * Both steps are synchronous and take ~1 ms per formula once MathJax is loaded,
  * so formulas can be rasterized inside a render pass while text streams in.
- * Loading MathJax takes ~200 ms, so it happens in the background after
- * session_start; until then formulas use the Unicode fallback.
+ * A host whose glyph data loads asynchronously calls `prepareSvg` first, which
+ * waits for any font file MathJax asks for; `rasterize` then hits the cache.
  *
  * Canvas sizing follows the terminal cell grid exactly (columns × rows cells),
- * so Kitty never has to stretch the image. Scale: 1ex ≈ 0.5 × cell height,
- * which makes formula text match the terminal font size (same as pi-math).
+ * so the terminal never has to stretch the image. Scale: 1ex ≈ 0.5 × cell
+ * height, which makes formula text match the terminal font size.
  */
-import { existsSync } from "node:fs";
-import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
-import { textFontOptions } from "./cjk-font.ts";
+import { toBase64 } from "../base64.ts";
+
+/** Where MathJax comes from and how SVG becomes PNG on this host. */
+export interface MathBackend {
+	/** The exports of mathjax-lib.cjs (or a bundle of it). Called once, lazily. */
+	loadLibrary(): any;
+	/** Rasterize a complete SVG document to PNG bytes. */
+	rasterizeSvg(svg: string): Uint8Array;
+}
+
+let backend: MathBackend | undefined;
+
+/** Install the host's backend. Formulas stay in their text fallback until one is set. */
+export function setMathBackend(next: MathBackend): void {
+	backend = next;
+}
 
 export interface Raster {
 	base64: string;
@@ -41,7 +58,6 @@ const BLEED = 1;
 
 interface Engine {
 	toSvg(tex: string, display: boolean): string;
-	Resvg: any;
 }
 
 let engine: Engine | undefined;
@@ -83,13 +99,6 @@ function fixFullWidth(svg: string): string {
 	return fixed + svg.slice(open.length);
 }
 
-/** MathJax modules: the trimmed bundle when built (published package), else node_modules (development). */
-function loadLibrary(): any {
-	const require = createRequire(import.meta.url);
-	const bundle = fileURLToPath(new URL("../../vendor/mathjax.cjs", import.meta.url));
-	return require(existsSync(bundle) ? bundle : "./mathjax-lib.cjs");
-}
-
 export function mathjaxBundled(): boolean {
 	return library?.bundled === true;
 }
@@ -97,10 +106,9 @@ export function mathjaxBundled(): boolean {
 let library: any;
 
 function createEngine(): Engine {
-	const require = createRequire(import.meta.url);
-	library = loadLibrary();
+	if (!backend) throw new Error("no math backend installed");
+	library = backend.loadLibrary();
 	const { mathjax, liteAdaptor, RegisterHTMLHandler, TeX, SVG, MathJaxNewcmFont, packages: PACKAGES } = library;
-	const { Resvg } = require("@resvg/resvg-js");
 
 	const adaptor = liteAdaptor({ cjkCharWidth: 1, unknownCharWidth: 0.6, unknownCharHeight: 0.8 });
 	RegisterHTMLHandler(adaptor);
@@ -133,7 +141,6 @@ function createEngine(): Engine {
 			if (svg.includes('data-mml-node="merror"')) throw new MathError("TeX error");
 			return svg;
 		},
-		Resvg,
 	};
 }
 
@@ -161,18 +168,34 @@ export function loadMathJaxSync(): void {
 
 const svgCache = new Map<string, { svg: string; widthEx: number; heightEx: number } | MathError>();
 
-function svgFor(tex: string, display: boolean): { svg: string; widthEx: number; heightEx: number } {
+/** A MathJax "retry" signal: glyph data is loading; the conversion has to run again. */
+function isRetry(error: unknown): boolean {
+	return typeof error === "object" && error !== null && "retry" in error && (error as { retry?: unknown }).retry instanceof Promise;
+}
+
+function svgFor(tex: string, display: boolean, rethrowRetry = false): { svg: string; widthEx: number; heightEx: number } {
 	if (!engine) throw new MathError("MathJax not loaded");
 	const key = `${display ? "D" : "I"}\0${tex}`;
 	let entry = svgCache.get(key);
 	if (!entry) {
 		try {
-			const svg = engine.toSvg(tex, display);
+			let svg: string;
+			try {
+				svg = engine.toSvg(tex, display);
+			} catch (error) {
+				// Glyph data still loading: not a property of the formula, so not cached.
+				if (isRetry(error)) {
+					if (rethrowRetry) throw error;
+					throw new MathError("glyphs loading", { cause: error });
+				}
+				throw error;
+			}
 			const widthEx = Number(/\swidth="([\d.]+)ex"/.exec(svg)?.[1]);
 			const heightEx = Number(/\sheight="([\d.]+)ex"/.exec(svg)?.[1]);
 			if (!(widthEx > 0) || !(heightEx > 0)) throw new MathError("SVG without ex dimensions");
 			entry = { svg, widthEx, heightEx };
 		} catch (error) {
+			if (isRetry(error) || (error instanceof MathError && isRetry(error.cause))) throw error;
 			entry = error instanceof MathError ? error : new MathError(error instanceof Error ? error.message : String(error));
 		}
 		if (svgCache.size > 2000) svgCache.clear();
@@ -180,6 +203,24 @@ function svgFor(tex: string, display: boolean): { svg: string; widthEx: number; 
 	}
 	if (entry instanceof MathError) throw entry;
 	return entry;
+}
+
+/**
+ * Convert a formula ahead of rendering, waiting for any glyph data MathJax has
+ * to load first (hosts whose `asyncLoad` is asynchronous). Errors are cached
+ * like everything else and surface when the formula is rasterized.
+ */
+export async function prepareSvg(tex: string, display: boolean): Promise<void> {
+	if (!engine) return;
+	const key = `${display ? "D" : "I"}\0${tex}`;
+	if (svgCache.has(key)) return;
+	const retries = library?.mathjax?.handleRetriesFor as ((code: () => unknown) => Promise<unknown>) | undefined;
+	if (!retries) return;
+	try {
+		await retries(() => svgFor(tex, display, true));
+	} catch {
+		// cached as a MathError by svgFor
+	}
 }
 
 /** Validate a formula without rasterizing it. */
@@ -198,18 +239,9 @@ export function centeredCanvas(inner: string, contentW: number, contentH: number
 	);
 }
 
-export function rasterizeSvg(svg: string): Buffer {
-	if (!engine) throw new MathError("resvg not loaded");
-	return engine.Resvg
-		? new engine.Resvg(svg, {
-				font: svg.includes("<text") ? textFontOptions(svg) : { loadSystemFonts: false },
-				shapeRendering: 2,
-				textRendering: 2,
-				logLevel: "error",
-			})
-				.render()
-				.asPng()
-		: Buffer.alloc(0);
+export function rasterizeSvg(svg: string): Uint8Array {
+	if (!engine || !backend) throw new MathError("rasterizer not loaded");
+	return backend.rasterizeSvg(svg);
 }
 
 /** Device pixels per logical pixel: small reported cells are likely logical (non-retina) pixels. */
@@ -242,5 +274,5 @@ export function rasterize(req: RasterRequest): Raster {
 	const canvasH = Math.ceil(rows * cellH * scale);
 	if (canvasW > MAX_CANVAS || canvasH > MAX_CANVAS) throw new MathError("raster too large");
 	const png = rasterizeSvg(centeredCanvas(svg, contentW * scale, contentH * scale, canvasW, canvasH, req.color));
-	return { base64: png.toString("base64"), columns, rows };
+	return { base64: toBase64(png), columns, rows };
 }

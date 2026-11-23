@@ -1,57 +1,28 @@
 /**
  * Drop-in replacement for pi-tui's Markdown component on assistant text.
  *
- * Streaming cost: pi rebuilds the component on every delta, so render results
- * are cached per top-level block in a module-wide LRU keyed by the block's raw
- * source. Appending text therefore re-renders only the block that changed
- * (normally the last one); everything above is a cache hit.
+ * Rendering itself is the shared core (src/core/render/markdown.ts); this
+ * component adds pi's padding, the optional Markdown transform, theme
+ * following and the clickable copy buttons on code blocks.
  */
-import { sliceByColumn, visibleWidth, type Component, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
-import { state } from "../state.ts";
-import type { Style } from "../style.ts";
-import { renderBlock } from "./blocks.ts";
-import { codeButtonText, type CopyStatus } from "./code-action.ts";
-import type { CodeAction, MathRenderer, RenderContext } from "./context.ts";
-import { lex } from "./lexer.ts";
+import { type Component, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
+import { codeButtonText, type CopyStatus } from "../core/render/code-action.ts";
+import type { CodeAction } from "../core/render/context.ts";
+import { renderMarkdown as renderCore, type RenderOptions } from "../core/render/markdown.ts";
+import { state } from "../core/state.ts";
+import type { Style } from "../core/style.ts";
+import { sliceByColumn, visibleWidth } from "../core/text.ts";
+
+import { mermaidDiagram } from "./mermaid.ts";
+
+export { cacheStats, clearBlockCache, type RenderOptions } from "../core/render/markdown.ts";
+
+/** The core renderer with pi's defaults: mermaid blocks become diagrams unless `diagram` says otherwise. */
+export function renderMarkdown(markdown: string, width: number, options: RenderOptions, actions?: CodeAction[]): string[] {
+	return renderCore(markdown, width, { ...options, diagram: "diagram" in options ? options.diagram : mermaidDiagram }, actions);
+}
 
 export type MarkdownTransform = (markdown: string, availableWidth: number) => string;
-
-const BLOCK_CACHE_LIMIT = 4000;
-type RenderedBlock = { lines: string[]; actions: CodeAction[] };
-const blockCache = new Map<string, RenderedBlock>();
-const byToken = new WeakMap<object, { context: string; block: RenderedBlock }>();
-
-export const cacheStats = { hits: 0, misses: 0 };
-
-function cached(key: string, compute: () => RenderedBlock): RenderedBlock {
-	const hit = blockCache.get(key);
-	if (hit) {
-		cacheStats.hits++;
-		blockCache.delete(key);
-		blockCache.set(key, hit);
-		return hit;
-	}
-	cacheStats.misses++;
-	const value = compute();
-	blockCache.set(key, value);
-	if (blockCache.size > BLOCK_CACHE_LIMIT) {
-		const oldest = blockCache.keys().next().value;
-		if (oldest !== undefined) blockCache.delete(oldest);
-	}
-	return value;
-}
-
-export function clearBlockCache(): void {
-	blockCache.clear();
-	cacheStats.hits = 0;
-	cacheStats.misses = 0;
-}
-
-export interface RenderOptions {
-	style: Style;
-	math: MathRenderer;
-	streaming: boolean;
-}
 
 export interface RichMarkdownOptions extends Omit<RenderOptions, "style"> {
 	/** A Style, or a function returning the current one on every render (follows theme switches). */
@@ -61,44 +32,6 @@ export interface RichMarkdownOptions extends Omit<RenderOptions, "style"> {
 	copyCode?: (code: string) => Promise<void>;
 	onCopyError?: (error: unknown) => void;
 	requestRender?: () => void;
-}
-
-/** Render markdown to terminal lines of at most `width` columns (no padding). */
-export function renderMarkdown(markdown: string, width: number, options: RenderOptions, actions?: CodeAction[]): string[] {
-	const { style, math, streaming } = options;
-	const tokens = lex(markdown, streaming);
-	const ctx: RenderContext = { style, math, width, streaming, listDepth: 0 };
-	const base = `${width}\0${style.key}\0${math.key}\0${state.version}\0${state.lineNumbers ? 1 : 0}${state.mermaid ? 1 : 0}\0`;
-	const lastIndex = tokens.length - 1;
-	const lines: string[] = [];
-	tokens.forEach((token: any, i) => {
-		if (token.type === "space" || token.type === "def") return;
-		// Only the trailing block of a streaming message can still be incomplete. Earlier
-		// blocks render exactly as in the final message (and share its cache entries),
-		// unless math is deferred until message_end.
-		const phase = !streaming ? "f" : i === lastIndex ? "s" : state.math === "final" ? "m" : "f";
-		const context = base + phase + (actions ? "buttons" : "plain");
-		// Fast path: incremental lexing hands back the same token objects for the
-		// stable prefix, so identity lookups avoid hashing long block sources.
-		const known = byToken.get(token);
-		let block: RenderedBlock;
-		if (known && known.context === context) {
-			cacheStats.hits++;
-			block = known.block;
-		} else {
-			block = cached(`${context}\0${token.type}\0${token.raw}`, () => {
-				const buttons: CodeAction[] = [];
-				const rendered = renderBlock(token, { ...ctx, streaming: phase !== "f", onCode: actions ? (action) => buttons.push(action) : undefined });
-				return { lines: rendered, actions: buttons };
-			});
-			byToken.set(token, { context, block });
-		}
-		if (block.lines.length === 0) return;
-		if (lines.length > 0) lines.push("");
-		for (const action of block.actions) actions?.push({ ...action, y: action.y + lines.length });
-		lines.push(...block.lines);
-	});
-	return lines;
 }
 
 export class RichMarkdown implements Component {
@@ -136,7 +69,7 @@ export class RichMarkdown implements Component {
 		const prefix = " ".repeat(padding);
 		const actions: CodeAction[] = [];
 		const lines = markdown.trim()
-			? renderMarkdown(markdown, contentWidth, { style, math: this.options.math, streaming: this.options.streaming }, this.options.copyCode ? actions : undefined)
+			? renderCore(markdown, contentWidth, { style, math: this.options.math, streaming: this.options.streaming, diagram: "diagram" in this.options ? this.options.diagram : mermaidDiagram }, this.options.copyCode ? actions : undefined)
 				.map((line) => (line ? prefix + line : line))
 			: [];
 		this.actions = actions.map((action) => ({ ...action, x: action.x + padding }));

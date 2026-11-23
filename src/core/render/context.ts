@@ -25,6 +25,14 @@ export function offsetCodeActions(ctx: RenderContext, x: number, y: number): Ren
 	return { ...ctx, onCode: ctx.onCode ? (action) => ctx.onCode!({ ...action, x: action.x + x, y: action.y + y }) : undefined };
 }
 
+/** Draws fenced code of some languages as something else (pi: mermaid diagrams). */
+export interface DiagramRenderer {
+	/** Lines for the block, or undefined to show it as code. */
+	render(lang: string, source: string, ctx: RenderContext): string[] | undefined;
+	/** A short status shown next to the language label while the block is code (e.g. "loading renderer…"). */
+	note(lang: string): string;
+}
+
 export interface RenderContext {
 	onCode?: (action: CodeAction) => void;
 	style: Style;
@@ -37,6 +45,7 @@ export interface RenderContext {
 	listDepth: number;
 	/** Applied to plain text leaves (e.g. dim color inside block quotes). */
 	textStyle?: (text: string) => string;
+	diagram?: DiagramRenderer;
 }
 
 export const noMath: MathRenderer = {

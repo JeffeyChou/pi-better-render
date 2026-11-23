@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import { setCapabilities } from "@earendil-works/pi-tui";
-import { createMathRenderer } from "../src/math/formula.ts";
-import { setKittyWriter } from "../src/math/kitty.ts";
-import { loadMathJaxSync } from "../src/math/mathjax.ts";
-import { lex } from "../src/render/lexer.ts";
-import { renderMarkdown } from "../src/render/rich-markdown.ts";
-import { createStyle } from "../src/style.ts";
+import { createMathRenderer } from "../src/pi/formula.ts";
+import { setKittyWriter } from "../src/pi/kitty.ts";
+import { loadMathJaxSync } from "../src/core/math/mathjax.ts";
+import { lex } from "../src/core/render/lexer.ts";
+import { renderMarkdown } from "../src/pi/rich-markdown.ts";
+import { createStyle } from "../src/core/style.ts";
 import { darkTheme } from "./theme.ts";
 loadMathJaxSync(); setKittyWriter(undefined); process.env.PI_BETTER_RENDER_PLACEHOLDERS = "1";
 setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });

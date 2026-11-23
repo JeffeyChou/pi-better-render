@@ -13,8 +13,8 @@
  */
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import { type Component, Markdown } from "@earendil-works/pi-tui";
-import type { MarkdownTransform } from "./render/rich-markdown.ts";
-import { state } from "./state.ts";
+import type { MarkdownTransform } from "./rich-markdown.ts";
+import { state } from "../core/state.ts";
 
 export type RichFactory = (text: string, paddingX: number, streaming: boolean, transform: MarkdownTransform | undefined) => Component;
 

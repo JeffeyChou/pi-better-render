@@ -1,4 +1,4 @@
-import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { visibleWidth, wrapTextWithAnsi } from "../text.ts";
 
 export { visibleWidth };
 

@@ -23,9 +23,9 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { bumpVersion, requestRender, state } from "../state.ts";
-import type { RenderContext } from "./context.ts";
-import { visibleWidth } from "./util.ts";
+import { bumpVersion, requestRender, state } from "../core/state.ts";
+import type { DiagramRenderer, RenderContext } from "../core/render/context.ts";
+import { visibleWidth } from "../core/render/util.ts";
 
 type AsciiRenderer = (text: string, options?: Record<string, unknown>) => string;
 
@@ -247,3 +247,9 @@ export function renderMermaid(source: string, ctx: RenderContext): string[] | un
 	}
 	return undefined;
 }
+
+/** ```mermaid blocks as diagrams, for the core renderer's `diagram` option. */
+export const mermaidDiagram: DiagramRenderer = {
+	render: (lang, source, ctx) => (isMermaid(lang) ? renderMermaid(source, ctx) : undefined),
+	note: (lang) => (isMermaid(lang) ? mermaidPendingNote() : ""),
+};

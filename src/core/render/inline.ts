@@ -1,4 +1,4 @@
-import { hyperlink, renderLatex } from "@earendil-works/pi-tui";
+import { hyperlink, renderLatex } from "../text.ts";
 import type { RenderContext } from "./context.ts";
 import { decodeEntities, plainText } from "./util.ts";
 
