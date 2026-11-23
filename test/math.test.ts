@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { test } from "node:test";
 import { setCapabilities, setCellDimensions, visibleWidth } from "@earendil-works/pi-tui";
+import { configureTextFonts } from "../src/pi/cjk-font.ts";
 import { createMathRenderer } from "../src/pi/formula.ts";
 import { deleteImages, installFrameHook, placeholderRows, prepareFrame, registerImage, setKittyWriter, transmitSequence } from "../src/pi/kitty.ts";
 import { loadMathJaxSync, MathError, rasterize } from "../src/core/math/mathjax.ts";
@@ -12,6 +13,9 @@ import { plainStyle } from "../src/core/style.ts";
 import { state } from "../src/core/state.ts";
 
 loadMathJaxSync();
+// Typesetting only: never start the CJK font download (text-font.test.ts covers it), which a
+// machine without a system CJK font, such as a CI runner, would otherwise begin here.
+configureTextFonts({ allowDownload: false });
 const cell = { cellWidth: 9, cellHeight: 18 };
 const base = { color: "#d4d4d4", maxColumns: 80, ...cell };
 
