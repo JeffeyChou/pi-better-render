@@ -1,0 +1,31 @@
+{
+  "name": "better-render",
+  "version": "0.1.0",
+  "description": "Formulas as images and aligned CJK tables in Claude Code's replies, rendered by the pi-better-render core (display only; replies, transcripts and the model's context keep the original Markdown).",
+  "author": { "name": "Jiefeng Zhou" },
+  "homepage": "https://github.com/JeffeyChou/pi-better-render/tree/main/plugins/claude",
+  "repository": "https://github.com/JeffeyChou/pi-better-render",
+  "license": "MIT",
+  "keywords": ["markdown", "latex", "mathjax", "kitty-graphics", "ghostty", "cjk"],
+  "userConfig": {
+    "images": {
+      "type": "string",
+      "title": "Formula images",
+      "description": "auto: images in Ghostty and kitty, readable text elsewhere. on: always try images. off: always text.",
+      "options": ["auto", "on", "off"],
+      "default": "auto"
+    },
+    "cellAspect": {
+      "type": "number",
+      "title": "Cell height / width",
+      "description": "Your terminal font's cell height divided by its width. Formula pictures are drawn for this shape; raise it if formulas look squashed, lower it if they look stretched.",
+      "default": 2.1
+    },
+    "formulaColor": {
+      "type": "string",
+      "title": "Formula color",
+      "description": "A #rrggbb color for formulas. Empty: white or black by Claude's theme.",
+      "default": ""
+    }
+  }
+}

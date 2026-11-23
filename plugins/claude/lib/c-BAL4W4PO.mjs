@@ -1,0 +1,1 @@
+import{b as t}from"./c-T25VGLXV.mjs";var o=t(e=>{"use strict";Object.defineProperty(e,"__esModule",{value:!0});e.H=e.V=e.DIRECTION=void 0;e.DIRECTION={None:"",Vertical:"v",Horizontal:"h"};e.V=e.DIRECTION.Vertical;e.H=e.DIRECTION.Horizontal});export{o as a};
