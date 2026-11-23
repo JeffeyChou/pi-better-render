@@ -223,6 +223,8 @@ sources, and CI checks that it matches. `npm publish` runs the typecheck and tes
   rendering is unchanged; the extension entry moved to `src/pi/index.ts`.
 - `better-render install --target pi|claude` and `better-render doctor`
   ([`packages/better-render`](packages/better-render)).
+- `better-render doctor` lists Codex and the Antigravity CLI as not supported yet, with the reason:
+  neither has an extension point for drawing replies in the terminal.
 
 ### 0.5.0 (2026-10-31)
 

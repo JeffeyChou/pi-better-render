@@ -8,7 +8,7 @@
  * render modes verified there.
  */
 import { spawn } from "node:child_process";
-import { TARGETS } from "./targets.mjs";
+import { TARGETS, UNSUPPORTED, unsupportedStatus } from "./targets.mjs";
 
 const USAGE = `Usage:
   better-render install --target <${Object.keys(TARGETS).join("|")}> [--source <source>] [--dry-run]
@@ -19,7 +19,9 @@ install   Install the renderer into one host with that host's own installer.
           steps already done are skipped, so running it again is safe.
           --source  pi: the package source for \`pi install\` (default npm:pi-better-render)
                     claude: the marketplace source (default JeffeyChou/pi-better-render)
-doctor    Show hosts, versions, what is installed and the verified render modes.`;
+doctor    Show hosts, versions, what is installed and the verified render modes.
+
+Not supported yet (doctor says why): ${Object.values(UNSUPPORTED).map((h) => `${h.name} (${h.host})`).join(", ")}.`;
 
 /** Run a command and collect its output; undefined when it cannot be started (not on PATH). */
 export function defaultRun(command, args, { inherit = false } = {}) {
@@ -41,6 +43,7 @@ export function defaultRun(command, args, { inherit = false } = {}) {
 }
 
 function parseArgs(argv) {
+	if (argv[0] === "--help" || argv[0] === "-h") return { command: "help", flags: {} };
 	const [command, ...rest] = argv;
 	const flags = {};
 	for (let i = 0; i < rest.length; i++) {
@@ -88,7 +91,11 @@ export async function main(argv, io = {}) {
 		const report = [];
 		for (const target of Object.values(TARGETS)) {
 			const status = await target.status(run, {});
-			report.push({ target: target.name, host: target.host, ...status, minVersion: target.minVersion, modes: target.modes });
+			report.push({ target: target.name, host: target.host, supported: true, ...status, minVersion: target.minVersion, modes: target.modes });
+		}
+		for (const host of Object.values(UNSUPPORTED)) {
+			const status = await unsupportedStatus(run, host);
+			report.push({ target: host.name, host: host.host, supported: false, installed: false, ...status, reason: host.reason, checkedVersion: host.checkedVersion });
 		}
 		if (flags.json) {
 			out(JSON.stringify({ terminal: terminal(env), targets: report }, null, 2));
@@ -97,6 +104,12 @@ export async function main(argv, io = {}) {
 		out(`terminal: ${terminal(env)}`);
 		for (const r of report) {
 			out("");
+			if (!r.supported) {
+				out(`${r.host} (${r.target}): not supported yet`);
+				out(`  version:  ${r.cli ? r.version : `not found (${r.target} is not on PATH)`}`);
+				out(`  why:      ${r.reason} (checked with ${r.checkedVersion}).`);
+				continue;
+			}
 			out(`${r.host} (--target ${r.target})`);
 			if (!r.cli) {
 				out(`  not found: ${r.problem}`);
@@ -114,6 +127,11 @@ export async function main(argv, io = {}) {
 	if (command === "install") {
 		const name = flags.target;
 		const target = name ? TARGETS[name] : undefined;
+		const unsupported = name ? UNSUPPORTED[name] : undefined;
+		if (unsupported) {
+			err(`better-render: ${unsupported.host} is not supported yet: ${unsupported.reason} (checked with ${unsupported.checkedVersion}). Nothing was changed.`);
+			return 1;
+		}
 		if (!target) {
 			err(`better-render: ${name ? `unknown target "${name}"` : "--target is required"}; targets: ${Object.keys(TARGETS).join(", ")}. Nothing was changed.`);
 			return 2;
