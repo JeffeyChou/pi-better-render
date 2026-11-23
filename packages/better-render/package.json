@@ -1,0 +1,28 @@
+{
+  "name": "better-render",
+  "version": "0.1.0",
+  "description": "Install pi-better-render's formula and table rendering into pi or Claude Code with each host's own installer, and check what is set up.",
+  "keywords": ["pi", "claude-code", "markdown", "latex", "ghostty", "kitty-graphics"],
+  "author": "Jiefeng Zhou",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JeffeyChou/pi-better-render.git",
+    "directory": "packages/better-render"
+  },
+  "type": "module",
+  "bin": {
+    "better-render": "bin/better-render.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

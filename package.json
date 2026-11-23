@@ -47,6 +47,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "test:claude": "claude plugin validate . && claude plugin test plugins/claude",
+    "test:installer": "npm --prefix packages/better-render test",
+    "check:pack": "node tools/check-pack.mjs",
     "bench": "node --import tsx test/bench.ts",
     "preview": "node --import tsx test/preview.ts",
     "pretest": "npm run build",
