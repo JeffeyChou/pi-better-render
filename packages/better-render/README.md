@@ -12,6 +12,9 @@ npx better-render doctor                    # hosts, versions, what is installed
 - Steps whose result is already there are skipped, so running `install` again changes nothing.
 - When the host's CLI is missing, too old, or the target is unknown, it says so and changes nothing.
 - `--dry-run` prints the host commands without running them.
+- Codex (`codex`) and the Antigravity CLI (`agy`) are not supported yet: neither has an extension
+  point that changes how a reply is drawn in the terminal. `doctor` lists them with their version and
+  this reason, and `install --target codex|agy` refuses without running anything.
 - `--source` installs from somewhere else: a pi package source (`./checkout`, `npm:pi-better-render@0.6.0`) or a Claude Code marketplace (`owner/repo`, a URL, a folder).
 
 The package has no dependencies: each adapter comes from its own host's installer, not from npm through this package.

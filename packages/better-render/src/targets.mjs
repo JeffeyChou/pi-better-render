@@ -186,3 +186,44 @@ export const claude = {
 };
 
 export const TARGETS = { pi, claude };
+
+/**
+ * @typedef {object} UnsupportedHost
+ * @property {string} name
+ * @property {string} host
+ * @property {string} cli
+ * @property {string} checkedVersion  the version the reason was checked against
+ * @property {string} reason          why no adapter can be installed
+ */
+
+/**
+ * Hosts `doctor` reports but `install` refuses: they have no extension point
+ * that changes how a reply is drawn in the terminal, which both adapters rely
+ * on (pi: its Markdown component; Claude Code: the AssistantMessage render hook).
+ * Recheck when a new version of the host adds one.
+ * @type {Record<string, UnsupportedHost>}
+ */
+export const UNSUPPORTED = {
+	codex: {
+		name: "codex",
+		host: "Codex",
+		cli: "codex",
+		checkedVersion: "0.171.0",
+		reason:
+			"Codex has no extension point for drawing replies: plugins add skills, MCP servers, apps and hooks, none of them about display, and the only TUI extension is the status line",
+	},
+	agy: {
+		name: "agy",
+		host: "Antigravity CLI",
+		cli: "agy",
+		checkedVersion: "1.5.15",
+		reason:
+			"Antigravity CLI has no extension point for drawing replies in the terminal: plugins add skills, subagents, MCP servers and hooks, none of them about display, and UI sidecars, which show in the browser or IDE",
+	},
+};
+
+/** Whether an unsupported host's CLI is there, and its version. */
+export async function unsupportedStatus(run, host) {
+	const found = await version(run, host.cli);
+	return found === undefined ? { cli: false } : { cli: true, version: found };
+}

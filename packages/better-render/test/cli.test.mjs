@@ -43,13 +43,29 @@ else if (is("plugin", "install")) {
 save();
 `;
 
+/** A CLI that only answers --version, and logs every call. */
+const fakeVersionOnly = (name, version) => `
+const fs = require("fs");
+const state = JSON.parse(fs.readFileSync(process.env.FAKE_STATE, "utf8"));
+state.log.push(${JSON.stringify(name)} + " " + process.argv.slice(2).join(" "));
+fs.writeFileSync(process.env.FAKE_STATE, JSON.stringify(state));
+if (process.argv[2] === "--version") console.log(${JSON.stringify(version)});
+`;
+
+const FAKES = {
+	pi: () => FAKE_PI,
+	claude: () => FAKE_CLAUDE,
+	codex: () => fakeVersionOnly("codex", "codex-cli 0.171.0"),
+	agy: () => fakeVersionOnly("agy", "1.5.15"),
+};
+
 function setup({ hosts = ["pi", "claude"], state = {} } = {}) {
 	const dir = mkdtempSync(join(tmpdir(), "better-render-cli-"));
 	const statePath = join(dir, "state.json");
 	writeFileSync(statePath, JSON.stringify({ log: [], pi: [], marketplaces: [], plugins: [], piVersion: "1.5.2", claudeVersion: "2.1.330", ...state }));
 	for (const host of hosts) {
 		const file = join(dir, host);
-		writeFileSync(file, `#!${process.execPath}\n${host === "pi" ? FAKE_PI : FAKE_CLAUDE}`);
+		writeFileSync(file, `#!${process.execPath}\n${FAKES[host]()}`);
 		chmodSync(file, 0o755);
 	}
 	const cli = (...args) =>
@@ -206,8 +222,55 @@ test("doctor shows hosts, versions, install state and verified modes, and change
 		assert.match(text.stdout, /verified render modes:/);
 
 		const json = JSON.parse((await cli("doctor", "--json")).stdout);
-		assert.deepEqual(json.targets.map((t) => [t.target, t.cli, t.installed]), [["pi", false, false], ["claude", true, true]]);
+		assert.deepEqual(json.targets.map((t) => [t.target, t.cli, t.installed]), [["pi", false, false], ["claude", true, true], ["codex", false, false], ["agy", false, false]]);
 		assert.equal(changes(read().log).length, 0);
+	} finally {
+		cleanup();
+	}
+});
+
+test("doctor reports codex and agy as not supported yet, with their versions and why", async () => {
+	const { cli, read, cleanup } = setup({ hosts: ["pi", "claude", "codex"] });
+	try {
+		const text = await cli("doctor");
+		assert.equal(text.code, 0);
+		assert.match(text.stdout, /Codex \(codex\): not supported yet\n {2}version: {2}0\.171\.0\n {2}why: {6}Codex has no extension point for drawing replies/);
+		assert.match(text.stdout, /Antigravity CLI \(agy\): not supported yet\n {2}version: {2}not found \(agy is not on PATH\)/);
+
+		const json = JSON.parse((await cli("doctor", "--json")).stdout);
+		const byName = Object.fromEntries(json.targets.map((t) => [t.target, t]));
+		assert.equal(byName.pi.supported, true);
+		assert.equal(byName.codex.supported, false);
+		assert.equal(byName.codex.version, "0.171.0");
+		assert.match(byName.codex.reason, /status line/);
+		assert.deepEqual([byName.agy.supported, byName.agy.cli], [false, false]);
+		assert.equal(changes(read().log).length, 0);
+	} finally {
+		cleanup();
+	}
+});
+
+test("install --target codex or agy is refused without running anything", async () => {
+	const { cli, read, cleanup } = setup({ hosts: ["pi", "claude", "codex", "agy"] });
+	try {
+		for (const [target, host] of [["codex", "Codex"], ["agy", "Antigravity CLI"]]) {
+			const result = await cli("install", "--target", target);
+			assert.equal(result.code, 1);
+			assert.match(result.stderr, new RegExp(`${host} is not supported yet: .*Nothing was changed\\.`));
+		}
+		assert.deepEqual(read().log, []);
+	} finally {
+		cleanup();
+	}
+});
+
+test("--help prints the usage, naming the hosts not supported yet", async () => {
+	const { cli, cleanup } = setup();
+	try {
+		const result = await cli("--help");
+		assert.equal(result.code, 0);
+		assert.match(result.stdout, /install --target <pi\|claude>/);
+		assert.match(result.stdout, /Not supported yet \(doctor says why\): codex \(Codex\), agy \(Antigravity CLI\)\./);
 	} finally {
 		cleanup();
 	}
